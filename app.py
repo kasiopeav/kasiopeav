@@ -4,7 +4,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver2)", layout="wide")
+st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver3)", layout="wide")
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
@@ -152,7 +152,7 @@ def get_macro_indicators():
 
 brent, us10y, usd_krw, vix = get_macro_indicators()
 
-st.title("💖 재국♡광희 맞춤형 주식 대시보드 (ver2)")
+st.title("💖 재국♡광희 맞춤형 주식 대시보드 (ver3)")
 st.write("")
 
 def render_macro_card(title, value, unit, is_warn):
@@ -396,7 +396,7 @@ st.markdown("---")
 st.markdown("---")
 
 # ---------------------------------------------------------
-# 3. [강조 디자인] 재국 ♡ 광희 미래 총 배당금 종합 요약 (시뮬레이터 상단 위치)
+# 3. [강조 디자인] 재국 ♡ 광희 미래 총 배당금 종합 요약
 # ---------------------------------------------------------
 total_fut_buy = fut_buy_jg + fut_buy_gh
 total_fut_pre_tax = fut_pre_jg + fut_pre_gh
@@ -416,52 +416,3 @@ with tot_col2: st.metric(label="💰 세전 총 예상 배당금 (연)", value=f
 with tot_col3: st.metric(label="🎁 세후 총 예상 배당금 (연)", value=f"₩{total_fut_post_tax:,.0f}")
 with tot_col4: st.metric(label="📅 세후 총 월 예상 배당금", value=f"₩{total_fut_monthly_post_tax:,.0f}")
 with tot_col5: st.metric(label="📈 세후 총 예상 배당률 (%)", value=f"{total_fut_yield:.2f}%")
-
-st.markdown("<br>", unsafe_allow_html=True)
-st.markdown("---")
-
-# ---------------------------------------------------------
-# 4. 추가 매수 시뮬레이터
-# ---------------------------------------------------------
-st.subheader("🧮 추가 매수 시뮬레이터")
-all_items = st.session_state.portfolio_jg + st.session_state.portfolio_gh
-ticker_options = list(dict.fromkeys([item["ticker"] for item in all_items]))
-
-sim_col1, sim_col2, sim_col3 = st.columns(3)
-with sim_col1: selected_ticker = st.selectbox("종목 선택", ticker_options)
-with sim_col2: add_qty = st.number_input("추가 구매 수량(주)", min_value=1, value=10, step=1)
-
-selected_item = next(item for item in all_items if item["ticker"] == selected_ticker)
-ticker_name = selected_item.get("ticker", "")
-kr_info = KR_TICKER_MAP.get(ticker_name, {})
-symbol = selected_item.get("ticker_symbol") or kr_info.get("symbol") or ticker_name
-curr = selected_item.get("currency", "USD")
-
-try: last_div = float(selected_item.get("last_div", 0) or 0)
-except Exception: last_div = 0.0
-
-if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
-    last_div = KR_TICKER_MAP[ticker_name]["default_div"]
-
-try: current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
-except Exception: 
-    try: current_p = float(selected_item.get("avg_price", 0) or 0)
-    except Exception: current_p = 0.0
-
-if curr == "USD":
-    required_cost_krw = add_qty * current_p * usd_krw
-    add_monthly_div_krw = add_qty * last_div * usd_krw * (1 - TAX_RATE)
-    price_str = f"₩{current_p * usd_krw:,.0f} [${current_p:,.2f}]"
-else:
-    required_cost_krw = add_qty * current_p
-    add_monthly_div_krw = add_qty * last_div * (1 - TAX_RATE)
-    price_str = f"₩{current_p:,.0f}"
-
-with sim_col3: st.write(f"**현재가:** {price_str}")
-
-st.info(f"""
-💡 **{selected_ticker}** 종목을 **{add_qty}주** 매수할 때 예상 수치:
-* **필요 금액:** **₩{required_cost_krw:,.0f}**
-* **월 예상 배당금 증가 (세후):** +**₩{add_monthly_div_krw:,.0f}**
-* **연 예상 배당금 증가 (세후):** +**₩{add_monthly_div_krw * 12:,.0f}**
-""")
