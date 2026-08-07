@@ -7,9 +7,9 @@ from google.oauth2.service_account import Credentials
 import datetime
 
 # -----------------------------------------------------------------------------
-# 1. 페이지 기본 설정 및 디자인 (ver1 원본 동일)
+# 1. 페이지 기본 설정 및 스타일링
 # -----------------------------------------------------------------------------
-st.set_page_config(page_title="재국♡광희 재테크 계획", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="재국♡광희 재테크 & 인생 계획 대시보드", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
@@ -56,7 +56,6 @@ def save_sheet_data(worksheet, df):
     try:
         worksheet.clear()
         worksheet.update([df.columns.values.tolist()] + df.values.tolist())
-        # 저장 즉시 캐시 초기화 -> PC/모바일 연동 연산 완벽 해결
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -76,17 +75,17 @@ def fetch_market_data():
         latest_oil, latest_tnx, latest_usdkrw, latest_vix = 83.17, 4.67, 1418.50, 15.15
     return float(latest_oil), float(latest_tnx), float(latest_usdkrw), float(latest_vix)
 
-# 시장 데이터 로드
 oil, tnx, usdkrw, vix = fetch_market_data()
 
 # -----------------------------------------------------------------------------
 # 3. 메인 헤더 & 경제 지표 요약
 # -----------------------------------------------------------------------------
-st.title("💖 재국♡광희 재테크 계획")
+st.title("💖 재국♡광희 인생 계획 & 재테크 대시보드")
 
 today = datetime.datetime.now()
 st.markdown(f"##### 🗓 오늘은 {today.strftime('%Y년 %m월 %d일')}입니다.")
 
+# 4개 핵심 지표 카드
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     st.metric("브렌트유 시세 🟢 정상", f"${oil:.2f} USD")
@@ -100,10 +99,10 @@ with c4:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 4. 실시간 통합 보유 현황 (재국)
+# 4. 세션 1: 실시간 보유 현황 (재국) - 해외 직투 & 절세 계좌
 # -----------------------------------------------------------------------------
 st.subheader("📊 실시간 통합 보유 현황 (재국)")
-st.caption("💡 푸른색 배경의 qty(수량), avg_price(내 평단가) 셀을 수정한 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
+st.caption("💡 해외 직투 계좌 및 연금저축/ISA 계좌 수량, 평단가 변경 시 구글 시트에 자동 업데이트됩니다.")
 
 df1, ws1 = load_sheet_data("현재(재국)")
 if not df1.empty:
@@ -113,18 +112,17 @@ if not df1.empty:
             st.success("구글 시트 [현재(재국)]에 성공적으로 저장되었습니다!")
             st.rerun()
 
-    # ver1 요약 연산 (영문 컬럼 매핑)
+    # 요약 연산
     try:
         total_invest_jg = 0
         annual_div_jg = 0
-        
         for idx, row in edited_df1.iterrows():
-            qty = float(row.get('qty', 0) or 0)
-            avg_price = float(row.get('avg_price', 0) or 0)
-            last_div = float(row.get('last_div', 0) or 0)
+            qty = float(row.get('qty', row.get('보유수', 0)) or 0)
+            avg_price = float(row.get('avg_price', row.get('평단가', 0)) or 0)
+            last_div = float(row.get('last_div', row.get('배당($)', 0)) or 0)
             currency = str(row.get('currency', 'USD')).upper()
-            
             rate = usdkrw if currency == 'USD' else 1.0
+            
             total_invest_jg += qty * avg_price * rate
             annual_div_jg += qty * last_div * rate
 
@@ -144,10 +142,10 @@ if not df1.empty:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 5. 실시간 통합 보유 현황 (광희)
+# 5. 세션 2: 실시간 보유 현황 (광희)
 # -----------------------------------------------------------------------------
 st.subheader("📊 실시간 통합 보유 현황 (광희)")
-st.caption("💡 푸른색 배경의 qty(수량), avg_price(내 평단가) 셀을 수정한 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
+st.caption("💡 광희 계좌의 수량 및 평단가를 연동하여 모니터링합니다.")
 
 df2, ws2 = load_sheet_data("현재(광희)")
 if not df2.empty:
@@ -160,10 +158,10 @@ if not df2.empty:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 6. 미래 배당 세팅 목표 (재국)
+# 6. 세션 3: 미래 배당 세팅 목표 (재국)
 # -----------------------------------------------------------------------------
 st.subheader("🎯 미래 배당 세팅 목표 (재국)")
-st.caption("💡 목표 수량을 수정 후 저장 버튼을 누르면 미래 연간/월간 예상 배당금이 자동 연산됩니다.")
+st.caption("💡 최종 플랜 달성을 위한 목표 수량 설정 시 미래 연간/월간 배당금이 연산됩니다.")
 
 df3, ws3 = load_sheet_data("미래(재국)")
 if not df3.empty:
@@ -173,15 +171,13 @@ if not df3.empty:
             st.success("구글 시트 [미래(재국)]에 성공적으로 저장되었습니다!")
             st.rerun()
 
-    # ver1 미래 목표 요약 연산 (영문 컬럼 매핑)
     try:
         future_annual_div_jg = 0
         for idx, row in edited_df3.iterrows():
-            target_qty = float(row.get('target_qty', row.get('qty', 0)) or 0)
-            last_div = float(row.get('last_div', 0) or 0)
+            target_qty = float(row.get('target_qty', row.get('목표수량', row.get('qty', 0))) or 0)
+            last_div = float(row.get('last_div', row.get('배당($)', 0)) or 0)
             currency = str(row.get('currency', 'USD')).upper()
             rate = usdkrw if currency == 'USD' else 1.0
-            
             future_annual_div_jg += target_qty * last_div * rate
 
         st.markdown("#### 🚀 미래 목표 달성 시 예상 배당 요약 (재국)")
@@ -196,10 +192,10 @@ if not df3.empty:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 7. 미래 배당 세팅 목표 (광희)
+# 7. 세션 4: 미래 배당 세팅 목표 (광희)
 # -----------------------------------------------------------------------------
 st.subheader("🎯 미래 배당 세팅 목표 (광희)")
-st.caption("💡 목표 수량을 수정 후 저장 버튼을 누르면 미래 연간/월간 예상 배당금이 자동 연산됩니다.")
+st.caption("💡 광희 계좌의 미래 배당 세팅 목표입니다.")
 
 df4, ws4 = load_sheet_data("미래(광희)")
 if not df4.empty:
@@ -209,15 +205,13 @@ if not df4.empty:
             st.success("구글 시트 [미래(광희)]에 성공적으로 저장되었습니다!")
             st.rerun()
 
-    # ver1 미래 목표 요약 연산 (영문 컬럼 매핑)
     try:
         future_annual_div_gh = 0
         for idx, row in edited_df4.iterrows():
-            target_qty = float(row.get('target_qty', row.get('qty', 0)) or 0)
-            last_div = float(row.get('last_div', 0) or 0)
+            target_qty = float(row.get('target_qty', row.get('목표수량', row.get('qty', 0))) or 0)
+            last_div = float(row.get('last_div', row.get('배당($)', 0)) or 0)
             currency = str(row.get('currency', 'USD')).upper()
             rate = usdkrw if currency == 'USD' else 1.0
-            
             future_annual_div_gh += target_qty * last_div * rate
 
         st.markdown("#### 🚀 미래 목표 달성 시 예상 배당 요약 (광희)")
