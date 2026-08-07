@@ -89,7 +89,7 @@ if "future_target_jg" not in st.session_state:
 if "future_target_gh" not in st.session_state:
     st.session_state.future_target_gh = load_sheet_data("FutureTarget_GH", DEFAULT_PORTFOLIO_GH)
 
-# CSS 스타일 정의 (ver2 동일)
+# CSS 스타일 정의
 st.markdown("""
     <style>
     .macro-card { background-color: #f8f9fa; border-radius: 12px; padding: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e9ecef; text-align: center; }
@@ -104,7 +104,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 거시지표 (ver2 동일)
+# 거시지표
 # ---------------------------------------------------------
 @st.cache_data(ttl=300)
 def get_macro_indicators():
@@ -142,7 +142,7 @@ with macro_col4: render_macro_card("VIX 지수", f"{vix:.2f}", "", vix >= 40)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 공통 포트폴리오 랜더링 함수
+# 공통 포트폴리오 랜더링 함수 (에러 안전 처리 보완)
 # ---------------------------------------------------------
 def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
@@ -153,11 +153,26 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
     for item in st.session_state[portfolio_key]:
         symbol = item.get("ticker_symbol", item["ticker"])
-        qty, avg_p, curr, last_div, tot_div = item["qty"], item["avg_price"], item["currency"], item["last_div"], item["total_received_div"]
+        
+        # 수치 연산 안전 처리 (None, 문자열 에러 방지)
+        try: qty = float(item.get("qty", 0) or 0)
+        except Exception: qty = 0.0
+
+        try: avg_p = float(item.get("avg_price", 0) or 0)
+        except Exception: avg_p = 0.0
+
+        curr = item.get("currency", "USD")
+
+        try: last_div = float(item.get("last_div", 0) or 0)
+        except Exception: last_div = 0.0
+
+        try: tot_div = float(item.get("total_received_div", 0) or 0)
+        except Exception: tot_div = 0.0
+
         total_received_div_all_krw += tot_div
 
         try:
-            current_p = yf.Ticker(symbol).fast_info['lastPrice']
+            current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
         except Exception:
             current_p = avg_p
 
@@ -243,9 +258,18 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
     future_total_buy_krw, future_yearly_pre_tax_div_krw, future_yearly_post_tax_div_krw = 0.0, 0.0, 0.0
 
     for item in st.session_state[target_key]:
-        symbol, qty, curr, last_div = item.get("ticker_symbol", item["ticker"]), item["qty"], item["currency"], item["last_div"]
-        try: current_p = yf.Ticker(symbol).fast_info['lastPrice']
-        except Exception: current_p = item["avg_price"]
+        symbol = item.get("ticker_symbol", item["ticker"])
+        
+        try: qty = float(item.get("qty", 0) or 0)
+        except Exception: qty = 0.0
+
+        curr = item.get("currency", "USD")
+
+        try: last_div = float(item.get("last_div", 0) or 0)
+        except Exception: last_div = 0.0
+
+        try: current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
+        except Exception: current_p = float(item.get("avg_price", 0) or 0)
 
         if curr == "USD":
             buy_val_krw = qty * current_p * usd_krw
@@ -325,7 +349,7 @@ render_future_target_section("광희", "future_target_gh", buy_gh, "FutureTarget
 st.markdown("---")
 
 # ---------------------------------------------------------
-# 추가 매수 시뮬레이터 (ver2 동일)
+# 추가 매수 시뮬레이터
 # ---------------------------------------------------------
 st.subheader("🧮 추가 매수 시뮬레이터")
 all_items = st.session_state.portfolio_jg + st.session_state.portfolio_gh
@@ -336,10 +360,15 @@ with sim_col1: selected_ticker = st.selectbox("종목 선택", ticker_options)
 with sim_col2: add_qty = st.number_input("추가 구매 수량(주)", min_value=1, value=10, step=1)
 
 selected_item = next(item for item in all_items if item["ticker"] == selected_ticker)
-symbol, curr, last_div = selected_item.get("ticker_symbol", selected_item["ticker"]), selected_item["currency"], selected_item["last_div"]
+symbol, curr = selected_item.get("ticker_symbol", selected_item["ticker"]), selected_item.get("currency", "USD")
 
-try: current_p = yf.Ticker(symbol).fast_info['lastPrice']
-except Exception: current_p = selected_item["avg_price"]
+try: last_div = float(selected_item.get("last_div", 0) or 0)
+except Exception: last_div = 0.0
+
+try: current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
+except Exception: 
+    try: current_p = float(selected_item.get("avg_price", 0) or 0)
+    except Exception: current_p = 0.0
 
 if curr == "USD":
     required_cost_krw = add_qty * current_p * usd_krw
