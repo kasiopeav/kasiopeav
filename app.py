@@ -1,21 +1,24 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
 # 1. 페이지 기본 설정
 st.set_page_config(page_title="나만의 맞춤형 주식 대시보드", layout="wide")
 
-# 2. 구글 시트 연동 함수 (캐시 적용)
+# 2. 구글 시트 연동 함수 (최신 google-oauth 방식 적용)
 @st.cache_resource
 def get_gspread_client():
     creds_dict = dict(st.secrets["gcp_service_account"])
-    # private_key 줄바꿈 처리
     if "private_key" in creds_dict:
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
 
 def load_sheet_data(sheet_name):
@@ -32,9 +35,7 @@ def load_sheet_data(sheet_name):
 def save_sheet_data(worksheet, df):
     try:
         worksheet.clear()
-        # 헤더와 데이터 함께 업데이트
         worksheet.update([df.columns.values.tolist()] + df.values.tolist())
-        # 저장 후 데이터 캐시를 완전히 비워 즉시 반영되도록 함
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -44,7 +45,6 @@ def save_sheet_data(worksheet, df):
 # ----- 앱 메인 화면 -----
 st.title("📈 나만의 맞춤형 주식 대시보드")
 
-# 탭 구성 (직관적인 한글 명칭 반영)
 tab1, tab2, tab3, tab4 = st.tabs(["실시간 현황 (재국)", "실시간 현황 (광희)", "미래 목표 (재국)", "미래 목표 (광희)"])
 
 # ----- [탭 1] 현재(재국) -----
