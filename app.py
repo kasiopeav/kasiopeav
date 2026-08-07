@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
-# PAGE CONFIG
+# PAGE CONFIG (ver1 기준 유지)
 st.set_page_config(
     page_title="재국♡광희 인생 계획",
     page_icon="💖",
@@ -27,7 +27,7 @@ def init_gspread():
     spreadsheet = client.open_by_key(st.secrets["spreadsheet"]["sheet_id"])
     return spreadsheet
 
-# 백업용 초기 원본 보유 데이터
+# 백업용 원본 데이터
 DEFAULT_JAEGUK_HOLDINGS = pd.DataFrame([
     {"티커": "JEPQ", "수량(주)": 660, "내 평단가": 53.71, "예상 1주당 배당금": 0.5600},
     {"티커": "QQQI", "수량(주)": 627, "내 평단가": 53.07, "예상 1주당 배당금": 0.6346},
@@ -145,7 +145,7 @@ with col4:
 st.divider()
 
 # ---------------------------------------------------------
-# 3. 실시간 통합 보유 현황 및 계좌 요약 (원본 UI 형태 복원)
+# 3. 실시간 통합 보유 현황 및 계좌 요약 (현재 실제 보유용)
 # ---------------------------------------------------------
 def render_holdings_and_summary(owner_name, sheet, default_df):
     st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
@@ -194,7 +194,6 @@ def render_holdings_and_summary(owner_name, sheet, default_df):
 
     display_df = pd.DataFrame(display_rows)
     
-    # 수정 가능한 data_editor
     edited_df = st.data_editor(
         display_df,
         num_rows="dynamic",
@@ -207,7 +206,6 @@ def render_holdings_and_summary(owner_name, sheet, default_df):
         st.success(f"{owner_name} 님의 현황이 구글 시트에 안전하게 보관되었습니다!")
         st.rerun()
 
-    # ⭐ 사용자가 입력창(edited_df)에서 편집한 즉시 반응하는 실시간 연산 로직
     tot_invested = 0.0
     tot_annual_div_pre = 0.0
 
@@ -236,7 +234,6 @@ def render_holdings_and_summary(owner_name, sheet, default_df):
     tot_monthly_div_post = tot_annual_div_post / 12
     yield_rate = (tot_annual_div_post / tot_invested * 100) if tot_invested > 0 else 0.0
 
-    # 원본 계좌 성과 메트릭 (3열 구조)
     st.markdown("<br>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     with m1:
@@ -252,7 +249,6 @@ def render_holdings_and_summary(owner_name, sheet, default_df):
 
     return tot_invested, tot_annual_div_pre, tot_annual_div_post
 
-# 재국 & 광희 섹션 각각 호출
 invest_j, div_pre_j, div_post_j = render_holdings_and_summary("재국", sheet_jaeguk, DEFAULT_JAEGUK_HOLDINGS)
 st.markdown("---")
 invest_g, div_pre_g, div_post_g = render_holdings_and_summary("광희", sheet_gwanghee, DEFAULT_GWANGHEE_HOLDINGS)
@@ -260,19 +256,36 @@ invest_g, div_pre_g, div_post_g = render_holdings_and_summary("광희", sheet_gw
 st.divider()
 
 # ---------------------------------------------------------
-# 4. 미래 배당 세팅 목표 (원본 표 형식 및 실시간 연산 적용)
+# 4. 미래 배당 세팅 목표 (완전 독립형 데이터 처리)
 # ---------------------------------------------------------
-def render_future_target_table(owner_name, sheet, default_df):
+def render_future_target_table(owner_name, default_df):
     st.subheader(f"🎯 미래 배당 세팅 목표 ({owner_name})")
     
-    raw_df = load_data(sheet, default_df)
-    target_rows = []
+    # Session State를 사용하여 현재 보유 현황 시트와 완벽히 격리
+    state_key = f"target_df_state_{owner_name}"
+    if state_key not in st.session_state:
+        target_init_rows = []
+        for idx, row in default_df.iterrows():
+            ticker = str(row.get("티커", "")).strip()
+            qty = float(row.get("수량(주)", row.get("수량", 0)))
+            div_p = float(row.get("예상 1주당 배당금", 0))
+            if ticker:
+                target_init_rows.append({
+                    "티커": ticker,
+                    "목표 수량(주) ✏️": qty,
+                    "예상 1주당 배당금 ✏️": div_p
+                })
+        st.session_state[state_key] = pd.DataFrame(target_init_rows)
 
-    for idx, row in raw_df.iterrows():
+    # 세션 상태에서 데이터 불러와서 화면에 출력
+    curr_target_df = st.session_state[state_key]
+    
+    display_target_rows = []
+    for idx, row in curr_target_df.iterrows():
         ticker = str(row.get("티커", "")).strip()
         try:
-            qty = float(str(row.get("목표 수량(주) ✏️", row.get("수량(주)", row.get("수량", 0)))).replace(",", ""))
-            div_p = float(str(row.get("예상 1주당 배당금 ✏️", row.get("예상 1주당 배당금", 0))).replace(",", "").replace("$", "").replace("₩", ""))
+            qty = float(str(row.get("목표 수량(주) ✏️", 0)).replace(",", ""))
+            div_p = float(str(row.get("예상 1주당 배당금 ✏️", 0)).replace(",", "").replace("$", "").replace("₩", ""))
         except:
             qty, div_p = 0.0, 0.0
 
@@ -293,7 +306,7 @@ def render_future_target_table(owner_name, sheet, default_df):
                 div_str = f"₩{div_p * usd_krw:,.0f} [${div_p:.4f}]"
                 annual_div_post = (qty * div_p * 12 * usd_krw) * 0.846
 
-            target_rows.append({
+            display_target_rows.append({
                 "티커": ticker,
                 "목표 수량(주) ✏️": qty,
                 "예상 1주당 배당금 ✏️": div_p,
@@ -303,22 +316,21 @@ def render_future_target_table(owner_name, sheet, default_df):
                 "목표 연 예상 배당금 (세후)": f"₩{annual_div_post:,.0f}"
             })
 
-    target_df = pd.DataFrame(target_rows)
+    target_display_df = pd.DataFrame(display_target_rows)
 
     edited_target_df = st.data_editor(
-        target_df,
+        target_display_df,
         num_rows="dynamic",
         key=f"editor_target_{owner_name}"
     )
 
-    if st.button(f"💾 미래 목표 구글 시트 저장 및 즉시 연산 ({owner_name})", key=f"btn_save_target_{owner_name}"):
-        save_df = edited_target_df[["티커", "목표 수량(주) ✏️", "예상 1주당 배당금 ✏️"]]
-        save_df.columns = ["티커", "수량(주)", "예상 1주당 배당금"]
-        save_data(sheet, save_df)
-        st.success(f"{owner_name} 님의 미래 배당 목표 설정이 성공적으로 업데이트되었습니다!")
+    if st.button(f"💾 미래 목표 저장 및 즉시 연산 ({owner_name})", key=f"btn_save_target_{owner_name}"):
+        # 변경된 수정값을 독립적인 세션 상태에 저장 (상단 보유 현황에 영향 안 미침)
+        st.session_state[state_key] = edited_target_df[["티커", "목표 수량(주) ✏️", "예상 1주당 배당금 ✏️"]]
+        st.success(f"{owner_name} 님의 미래 배당 목표 설정이 성공적으로 반영되었습니다!")
         st.rerun()
 
-    # ⭐ 미래 목표 연산 실시간 반영
+    # 독립된 목표 시드 합산
     tot_target_seed = 0.0
     tot_target_div_post = 0.0
 
@@ -346,14 +358,14 @@ def render_future_target_table(owner_name, sheet, default_df):
 
     return tot_target_seed, tot_target_div_post
 
-target_seed_j, target_div_j = render_future_target_table("재국", sheet_jaeguk, DEFAULT_JAEGUK_HOLDINGS)
+target_seed_j, target_div_j = render_future_target_table("재국", DEFAULT_JAEGUK_HOLDINGS)
 st.markdown("<br>", unsafe_allow_html=True)
-target_seed_g, target_div_g = render_future_target_table("광희", sheet_gwanghee, DEFAULT_GWANGHEE_HOLDINGS)
+target_seed_g, target_div_g = render_future_target_table("광희", DEFAULT_GWANGHEE_HOLDINGS)
 
 st.divider()
 
 # ---------------------------------------------------------
-# 5. 미래 예상 배당금 요약 (초기 5열 메트릭 복원 및 재국+광희 합산)
+# 5. 미래 예상 배당금 요약
 # ---------------------------------------------------------
 st.subheader("🎯 미래 재국♡광희 예상 배당금 요약")
 
