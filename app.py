@@ -91,21 +91,9 @@ DEFAULT_PORTFOLIO_GH = [
     {"ticker": "QQQI", "ticker_symbol": "QQQI", "qty": 240, "avg_price": 53.11, "current_price": 54.75, "currency": "USD", "last_div": 0.6346}
 ]
 
-# 월별 배당금 기본 데이터
-DEFAULT_DIV_HISTORY_JG = [
-    {"month": "2024-01", "ticker": "JEPQ", "amount_krw": 3101187},
-    {"month": "2024-01", "ticker": "QQQI", "amount_krw": 680792},
-    {"month": "2024-01", "ticker": "SCHD", "amount_krw": 253716},
-    {"month": "2024-01", "ticker": "KODEX 미국배당커버드콜 액티브", "amount_krw": 299148},
-    {"month": "2024-01", "ticker": "KODEX 미국 AI테크 TOP10 타겟커버드콜", "amount_krw": 99234},
-    {"month": "2024-01", "ticker": "KODEX 200타겟위클리커버드콜", "amount_krw": 1517126},
-    {"month": "2024-01", "ticker": "KODEX 금융고배당TOP10타겟위클리커버트콜", "amount_krw": 164502},
-    {"month": "2024-01", "ticker": "TIGER 미국나스닥 100 타겟 데일리 커버드콜", "amount_krw": 27295}
-]
-
-DEFAULT_DIV_HISTORY_GH = [
-    {"month": "2024-01", "ticker": "QQQI", "amount_krw": 339613}
-]
+# 2026년 1월 기점 초기화 장부 데이터
+DEFAULT_DIV_HISTORY_JG = []
+DEFAULT_DIV_HISTORY_GH = []
 
 def load_sheet_data(worksheet_name, default_data):
     if gc is None:
@@ -118,6 +106,8 @@ def load_sheet_data(worksheet_name, default_data):
             ws = sh.add_worksheet(title=worksheet_name, rows=200, cols=10)
             if default_data:
                 ws.update([list(default_data[0].keys())] + [list(x.values()) for x in default_data])
+            else:
+                ws.update([["month", "ticker", "amount_krw"]])
         
         data = ws.get_all_records()
         if not data:
@@ -137,7 +127,9 @@ def save_sheet_data(worksheet_name, data):
             headers = list(data[0].keys())
             rows = [headers] + [[row[h] for h in headers] for row in data]
             ws.update(rows)
-            st.cache_data.clear()
+        else:
+            ws.update([["month", "ticker", "amount_krw"]])
+        st.cache_data.clear()
     except Exception as e:
         st.error(f"구글 시트 저장 실패: {e}")
 
@@ -211,7 +203,7 @@ st.title("💖 재국♡광희 맞춤형 주식 대시보드 (ver5)")
 st.write("")
 
 # 메인 탭 분리
-main_tab1, main_tab2 = st.tabs(["📊 주식 대시보드", "📅 월별 배당금 입금 장부"])
+main_tab1, main_tab2 = st.tabs(["📊 주식 대시보드", "📅 월별 배당금 입금 장부 (2026~)"])
 
 with main_tab1:
     def render_macro_card(title, value, unit, is_warn):
@@ -233,9 +225,6 @@ with main_tab1:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ---------------------------------------------------------
-    # 공통 포트폴리오 랜더링 함수 (장부 연동 배당금 집계)
-    # ---------------------------------------------------------
     def render_portfolio_section(owner_name, portfolio_key, history_key, sheet_name):
         st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
         st.caption("💡 푸른색 배경의 **수량(주) ✏️**, **내 평단가 ✏️**, **현재가 ✏️** 셀을 수정한 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
@@ -243,7 +232,6 @@ with main_tab1:
         df_data = []
         total_eval_krw, total_buy_krw, monthly_est_div_krw = 0.0, 0.0, 0.0
 
-        # 장부에서 집계된 올해 받은 총 배당금 연산
         history_list = st.session_state.get(history_key, [])
         total_received_div_all_krw = sum(float(h.get("amount_krw", 0) or 0) for h in history_list)
 
@@ -355,14 +343,11 @@ with main_tab1:
 
         row2_col1, row2_col2, row2_col3 = st.columns(3)
         with row2_col1: st.metric(label="📈 포트폴리오 세후 예상 배당률", value=f"{portfolio_div_yield:.2f}%")
-        with row2_col2: st.metric(label="🎁 올해 받은 총 배당금 (장부 집계)", value=f"₩{total_received_div_all_krw:,.0f}")
+        with row2_col2: st.metric(label="🎁 올해 받은 총 배당금 (2026 장부 누적)", value=f"₩{total_received_div_all_krw:,.0f}")
         with row2_col3: st.metric(label="📅 이번달 / 올해 예상 배당금 (세후)", value=f"월 ₩{monthly_est_div_krw:,.0f}", delta=f"연간 ₩{yearly_est_div_krw:,.0f}")
 
         return total_buy_krw
 
-    # ---------------------------------------------------------
-    # 공통 미래 목표 랜더링 함수
-    # ---------------------------------------------------------
     def render_future_target_section(owner_name, target_key, current_total_buy, sheet_name, portfolio_key):
         st.subheader(f"🎯 미래 배당 세팅 목표 ({owner_name})")
         future_df_data = []
@@ -503,24 +488,23 @@ with main_tab1:
 
 
 # ---------------------------------------------------------
-# TAB 2: 월별 배당금 입금 장부
+# TAB 2: 월별 배당금 입금 장부 (직관성 강화 & 2026 초기화)
 # ---------------------------------------------------------
 with main_tab2:
-    st.subheader("📅 월별 배당금 입금 장부")
-    st.caption("💡 입금된 월별 배당금을 직접 등록하고 내역을 관리할 수 있습니다. 입력된 배당금의 총합이 대시보드에 자동으로 반영됩니다.")
+    st.subheader("📅 월별 배당금 입금 장부 (2026년~)")
+    st.caption("💡 2026년 1월부터 입금되는 월별 배당금을 등록하는 장부입니다. 수치 등록 시 대시보드의 '올해 받은 총 배당금'에 실시간 반영됩니다.")
 
     owner_choice = st.radio("주주 선택", ["재국", "광희"], horizontal=True)
     history_key = "div_history_jg" if owner_choice == "재국" else "div_history_gh"
     sheet_name = "Dividend_History" if owner_choice == "재국" else "Dividend_History_GH"
     portfolio_key = "portfolio_jg" if owner_choice == "재국" else "portfolio_gh"
 
-    # 보유 종목 목록 추출
     available_tickers = [item["ticker"] for item in st.session_state[portfolio_key]]
 
-    st.markdown("#### ➕ 배당금 입금 내역 추가")
+    st.markdown("#### ➕ 신규 배당금 입금 등록")
     add_col1, add_col2, add_col3, add_col4 = st.columns([2, 3, 3, 2])
     with add_col1:
-        input_month = st.text_input("입금 월 (YYYY-MM)", datetime.now().strftime("%Y-%m"))
+        input_month = st.text_input("입금 월 (YYYY-MM)", "2026-01")
     with add_col2:
         input_ticker = st.selectbox("종목 선택", available_tickers)
     with add_col3:
@@ -534,22 +518,36 @@ with main_tab2:
                 "amount_krw": input_amount
             })
             save_sheet_data(sheet_name, st.session_state[history_key])
-            st.success(f"[{input_month}] {input_ticker} 배당금 ₩{input_amount:,.0f}원이 기록되었습니다!")
+            st.success(f"[{input_month}] {input_ticker} 배당금 ₩{input_amount:,.0f}원이 등록되었습니다!")
             st.rerun()
 
     st.markdown("---")
-    st.markdown(f"#### 📜 [{owner_choice}] 누적 배당 입금 상세 내역 장부")
+    st.markdown(f"#### 📜 [{owner_choice}] 2026년 이후 배당 입금 상세 내역 장부")
+
+    # 초기화 버튼
+    init_col1, init_col2 = st.columns([7, 3])
+    with init_col2:
+        if st.button(f"🚨 [{owner_choice}] 장부 전체 내역 초기화 (2026~)", use_container_width=True):
+            st.session_state[history_key] = []
+            save_sheet_data(sheet_name, [])
+            st.warning(f"[{owner_choice}] 장부 데이터가 초기화되었습니다.")
+            st.rerun()
 
     if st.session_state[history_key]:
         df_hist = pd.DataFrame(st.session_state[history_key])
         
-        # 편집 및 삭제 가능 에디터
+        # 직관적 데이터 에디터 (포맷팅 및 시각적 바 적용)
         edited_hist = st.data_editor(
             df_hist,
             column_config={
-                "month": "입금 월",
-                "ticker": "티커/종목명",
-                "amount_krw": st.column_config.NumberColumn("입금 금액 (₩)", format="₩%d")
+                "month": st.column_config.TextColumn("입금 월 (YYYY-MM)"),
+                "ticker": st.column_config.TextColumn("티커/종목명"),
+                "amount_krw": st.column_config.ProgressColumn(
+                    "입금 금액 (₩)",
+                    format="₩%d",
+                    min_value=0,
+                    max_value=max(1000000, max([float(x.get("amount_krw", 0) or 0) for x in st.session_state[history_key]] + [1000000]))
+                )
             },
             num_rows="dynamic",
             use_container_width=True,
@@ -561,11 +559,10 @@ with main_tab2:
             updated_hist = edited_hist.to_dict(orient="records")
             st.session_state[history_key] = updated_hist
             save_sheet_data(sheet_name, updated_hist)
-            st.success(f"[{owner_name}] 장부 변경 사항이 저장되었습니다!")
+            st.success(f"[{owner_choice}] 장부 변경 사항이 구글 시트에 저장되었습니다!")
             st.rerun()
 
-        # 누적 요약
         total_hist_sum = sum(float(x.get("amount_krw", 0) or 0) for x in st.session_state[history_key])
-        st.info(f"📊 **[{owner_choice}] 장부 집계 총 누적 수령 배당금:** **₩{total_hist_sum:,.0f}원**")
+        st.info(f"📊 **[{owner_choice}] 2026년 누적 수령 배당금 총합:** **₩{total_hist_sum:,.0f}원**")
     else:
-        st.info("등록된 배당금 입금 내역이 없습니다.")
+        st.info("등록된 배당금 입금 내역이 없습니다. 위에서 2026년 1월 내역부터 차곡차곡 추가해 보세요!")
