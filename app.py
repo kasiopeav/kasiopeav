@@ -8,6 +8,17 @@ st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver2)", layo
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
+# 한국 종목명 -> 티커 심볼 & 기본 1주당 배당금 보완 매핑
+KR_TICKER_MAP = {
+    "KODEX 미국배당커버드콜 액티브": {"symbol": "441680.KS", "default_div": 99.0},
+    "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"symbol": "480410.KS", "default_div": 149.0},
+    "KODEX 200타겟위클리커버드콜": {"symbol": "480460.KS", "default_div": 252.0},
+    "KODEX 금융고배당TOP10타겟위클리커버트콜": {"symbol": "489240.KS", "default_div": 162.0},
+    "RISE 미국테크100데일리고정커버드콜": {"symbol": "486250.KS", "default_div": 271.0},
+    "TIGER 미국나스닥 100 타겟 데일리 커버드콜": {"symbol": "482730.KS", "default_div": 127.0},
+    "KODEX 미국S&P500 데일리 커버드콜 OTM": {"symbol": "482720.KS", "default_div": 119.0}
+}
+
 # ---------------------------------------------------------
 # 0. 구글 시트 연동 설정
 # ---------------------------------------------------------
@@ -35,7 +46,11 @@ DEFAULT_PORTFOLIO_JG = [
     {"ticker": "SCHD", "ticker_symbol": "SCHD", "qty": 722, "avg_price": 27.12, "currency": "USD", "last_div": 0.25, "total_received_div": 253716},
     {"ticker": "QLD",  "ticker_symbol": "QLD",  "qty": 23,  "avg_price": 84.29, "currency": "USD", "last_div": 0.03, "total_received_div": 0},
     {"ticker": "KODEX 미국배당커버드콜 액티브", "ticker_symbol": "441680.KS", "qty": 194, "avg_price": 11288, "currency": "KRW", "last_div": 99, "total_received_div": 299148},
-    {"ticker": "KODEX 200타겟위클리커버드콜", "ticker_symbol": "480460.KS", "qty": 299, "avg_price": 15436, "currency": "KRW", "last_div": 262, "total_received_div": 1517126}
+    {"ticker": "KODEX 미국 AI테크 TOP10 타겟커버드콜", "ticker_symbol": "480410.KS", "qty": 149, "avg_price": 12259, "currency": "KRW", "last_div": 149, "total_received_div": 99234},
+    {"ticker": "KODEX 200타겟위클리커버드콜", "ticker_symbol": "480460.KS", "qty": 299, "avg_price": 15436, "currency": "KRW", "last_div": 262, "total_received_div": 1517126},
+    {"ticker": "KODEX 금융고배당TOP10타겟위클리커버트콜", "ticker_symbol": "489240.KS", "qty": 222, "avg_price": 12309, "currency": "KRW", "last_div": 162, "total_received_div": 164502},
+    {"ticker": "RISE 미국테크100데일리고정커버드콜", "ticker_symbol": "486250.KS", "qty": 83, "avg_price": 12259, "currency": "KRW", "last_div": 271, "total_received_div": 0},
+    {"ticker": "TIGER 미국나스닥 100 타겟 데일리 커버드콜", "ticker_symbol": "482730.KS", "qty": 53, "avg_price": 10420, "currency": "KRW", "last_div": 127, "total_received_div": 27295}
 ]
 
 # 기본 포트폴리오 (광희)
@@ -142,7 +157,7 @@ with macro_col4: render_macro_card("VIX 지수", f"{vix:.2f}", "", vix >= 40)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 공통 포트폴리오 랜더링 함수 (에러 안전 처리 보완)
+# 공통 포트폴리오 랜더링 함수
 # ---------------------------------------------------------
 def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
@@ -152,9 +167,12 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     total_eval_krw, total_buy_krw, total_received_div_all_krw, monthly_est_div_krw = 0.0, 0.0, 0.0, 0.0
 
     for item in st.session_state[portfolio_key]:
-        symbol = item.get("ticker_symbol", item["ticker"])
+        ticker_name = item.get("ticker", "")
         
-        # 수치 연산 안전 처리 (None, 문자열 에러 방지)
+        # 한국 주식 매핑 보완
+        kr_info = KR_TICKER_MAP.get(ticker_name, {})
+        symbol = item.get("ticker_symbol") or kr_info.get("symbol") or ticker_name
+        
         try: qty = float(item.get("qty", 0) or 0)
         except Exception: qty = 0.0
 
@@ -163,8 +181,12 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
         curr = item.get("currency", "USD")
 
+        # 배당금 0원 처리 방지
         try: last_div = float(item.get("last_div", 0) or 0)
         except Exception: last_div = 0.0
+
+        if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
+            last_div = KR_TICKER_MAP[ticker_name]["default_div"]
 
         try: tot_div = float(item.get("total_received_div", 0) or 0)
         except Exception: tot_div = 0.0
@@ -198,7 +220,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
         monthly_est_div_krw += monthly_div_item_krw
 
         df_data.append({
-            "티커": item["ticker"],
+            "티커": ticker_name,
             "수량(주) ✏️": qty,
             "내 평단가 ✏️": avg_p,
             "내 평단가 (한화/달러)": avg_price_disp,
@@ -258,7 +280,9 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
     future_total_buy_krw, future_yearly_pre_tax_div_krw, future_yearly_post_tax_div_krw = 0.0, 0.0, 0.0
 
     for item in st.session_state[target_key]:
-        symbol = item.get("ticker_symbol", item["ticker"])
+        ticker_name = item.get("ticker", "")
+        kr_info = KR_TICKER_MAP.get(ticker_name, {})
+        symbol = item.get("ticker_symbol") or kr_info.get("symbol") or ticker_name
         
         try: qty = float(item.get("qty", 0) or 0)
         except Exception: qty = 0.0
@@ -268,8 +292,13 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         try: last_div = float(item.get("last_div", 0) or 0)
         except Exception: last_div = 0.0
 
+        if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
+            last_div = KR_TICKER_MAP[ticker_name]["default_div"]
+
         try: current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
-        except Exception: current_p = float(item.get("avg_price", 0) or 0)
+        except Exception: 
+            try: current_p = float(item.get("avg_price", 0) or 0)
+            except Exception: current_p = 0.0
 
         if curr == "USD":
             buy_val_krw = qty * current_p * usd_krw
@@ -291,7 +320,7 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         future_yearly_post_tax_div_krw += post_tax_div_annual_krw
 
         future_df_data.append({
-            "티커": item["ticker"],
+            "티커": ticker_name,
             "목표 수량(주) ✏️": qty,
             "예상 1주당 배당금 ✏️": last_div,
             "현재가 기준 평단가": target_price_disp,
@@ -360,10 +389,16 @@ with sim_col1: selected_ticker = st.selectbox("종목 선택", ticker_options)
 with sim_col2: add_qty = st.number_input("추가 구매 수량(주)", min_value=1, value=10, step=1)
 
 selected_item = next(item for item in all_items if item["ticker"] == selected_ticker)
-symbol, curr = selected_item.get("ticker_symbol", selected_item["ticker"]), selected_item.get("currency", "USD")
+ticker_name = selected_item.get("ticker", "")
+kr_info = KR_TICKER_MAP.get(ticker_name, {})
+symbol = selected_item.get("ticker_symbol") or kr_info.get("symbol") or ticker_name
+curr = selected_item.get("currency", "USD")
 
 try: last_div = float(selected_item.get("last_div", 0) or 0)
 except Exception: last_div = 0.0
+
+if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
+    last_div = KR_TICKER_MAP[ticker_name]["default_div"]
 
 try: current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
 except Exception: 
