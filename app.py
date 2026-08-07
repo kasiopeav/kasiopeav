@@ -7,8 +7,8 @@ from datetime import datetime
 
 # PAGE CONFIG
 st.set_page_config(
-    page_title="나만의 맞춤형 주식 대시보드",
-    page_icon="📈",
+    page_title="재국♡광희 인생 계획",
+    page_icon="💖",
     layout="wide"
 )
 
@@ -27,8 +27,7 @@ def init_gspread():
     spreadsheet = client.open_by_key(st.secrets["spreadsheet"]["sheet_id"])
     return spreadsheet
 
-# 기본 원본 보유 데이터
-DEFAULT_HOLDINGS = pd.DataFrame([
+DEFAULT_JAEGUK_DATA = pd.DataFrame([
     {"티커": "JEPQ", "수량(주)": 660, "내 평단가": 53.71, "예상 1주당 배당금": 0.5600},
     {"티커": "QQQI", "수량(주)": 627, "내 평단가": 53.07, "예상 1주당 배당금": 0.6346},
     {"티커": "SCHD", "수량(주)": 722, "내 평단가": 27.12, "예상 1주당 배당금": 0.2500},
@@ -37,11 +36,20 @@ DEFAULT_HOLDINGS = pd.DataFrame([
     {"티커": "KODEX 200타겟위클리커버", "수량(주)": 299, "내 평단가": 15436, "예상 1주당 배당금": 262.0000}
 ])
 
+DEFAULT_GWANGHEE_DATA = pd.DataFrame([
+    {"티커": "QQQI", "수량(주)": 240, "내 평단가": 53.11, "예상 1주당 배당금": 0.6346}
+])
+
 try:
     spreadsheet = init_gspread()
-    sheet = spreadsheet.get_worksheet(0)
+    sheet_jaeguk = spreadsheet.get_worksheet(0)
+    try:
+        sheet_gwanghee = spreadsheet.worksheet("광희")
+    except:
+        sheet_gwanghee = None
 except Exception as e:
-    sheet = None
+    sheet_jaeguk = None
+    sheet_gwanghee = None
 
 def load_data(sheet, default_df):
     if sheet is None:
@@ -64,11 +72,8 @@ def save_data(sheet, df):
             sheet.clear()
             sheet.update([df.columns.values.tolist()] + df.values.tolist())
         except Exception as e:
-            st.error(f"구글 시트 저장 중 오류 발생: {e}")
+            st.error(f"저장 실패: {e}")
 
-# ---------------------------------------------------------
-# 2. MACRO DATA FETCHERS
-# ---------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_macro_data():
     tickers = {
@@ -102,16 +107,22 @@ def get_stock_price(ticker):
         return 0.0
 
 # ---------------------------------------------------------
-# 3. HEADER & MACRO INDICATORS (초기 원본 UI 스타일 복원)
+# 2. DASHBOARD HEADER & MACRO INDICATORS (요청하신 스타일로 수정)
 # ---------------------------------------------------------
-st.title("📈 나만의 맞춤형 주식 대시보드")
+st.title("💖 재국♡광희 인생 계획")
+
+weekday_kr = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
+now = datetime.now()
+today_str = f"📅 오늘은 {now.strftime('%Y년 %m월 %d일')} {weekday_kr[now.weekday()]}입니다."
+st.markdown(f"#### {today_str}")
+st.divider()
 
 macro = get_macro_data()
-usd_krw = macro.get("환율 (USD/KRW)", 1421.41)
+usd_krw = macro.get("환율 (USD/KRW)", 1420.08)
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    brent_val = macro.get('브렌트유', 83.62)
+    brent_val = macro.get('브렌트유', 83.20)
     brent_status = "⚠️ 주의" if brent_val >= 100 else "🟢 정상"
     st.metric(f"브렌트유 시세  {brent_status}", f"${brent_val:.2f} USD")
 
@@ -133,170 +144,112 @@ with col4:
 st.divider()
 
 # ---------------------------------------------------------
-# 4. 실시간 통합 보유 현황 (원본 표 및 3열 종합 요약 복원)
+# 3. HOLDINGS & CALCULATIONS FUNCTION
 # ---------------------------------------------------------
-st.subheader("📊 실시간 통합 보유 현황")
-st.caption("💡 푸른색 배경의 수량(주) ✏️, 내 평단가 ✏️ 셀을 수정하신 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
-
-raw_df = load_data(sheet, DEFAULT_HOLDINGS)
-
-display_rows = []
-tot_invested = 0.0
-tot_annual_div_pre = 0.0
-
-for idx, row in raw_df.iterrows():
-    ticker = str(row.get("티커", "")).strip()
-    try:
-        qty = float(str(row.get("수량(주)", row.get("수량", 0))).replace(",", ""))
-        avg_p = float(str(row.get("내 평단가", 0)).replace(",", "").replace("$", "").replace("₩", ""))
-        div_p = float(str(row.get("예상 1주당 배당금", 0)).replace(",", "").replace("$", "").replace("₩", ""))
-    except:
-        qty, avg_p, div_p = 0.0, 0.0, 0.0
-
-    if ticker:
-        is_kr = "KODEX" in ticker or "TIGER" in ticker or "RISE" in ticker or ticker.endswith(".KS") or ticker.endswith(".KQ")
-        cur_p = get_stock_price(ticker)
-        if cur_p == 0: cur_p = avg_p
-
-        if is_kr:
-            avg_str = f"₩{avg_p:,.0f}"
-            cur_str = f"₩{cur_p:,.0f}"
-            invested = qty * avg_p
-            tot_str = f"₩{invested:,.0f}"
-            div_str = f"₩{div_p:,.0f}"
-            annual_div = qty * div_p * 12
-        else:
-            avg_str = f"₩{avg_p * usd_krw:,.0f} [${avg_p:.2f}]"
-            cur_str = f"₩{cur_p * usd_krw:,.0f} [${cur_p:.2f}]"
-            invested = qty * avg_p * usd_krw
-            tot_str = f"₩{invested:,.0f} [${qty * avg_p:,.2f}]"
-            div_str = f"₩{div_p * usd_krw:,.0f} [${div_p:.4f}]"
-            annual_div = qty * div_p * 12 * usd_krw
-
-        tot_invested += invested
-        tot_annual_div_pre += annual_div
-
-        display_rows.append({
-            "티커": ticker,
-            "수량(주)": qty,
-            "내 평단가": avg_p,
-            "내 평단가 (한화/달러)": avg_str,
-            "현재가 (한화/달러)": cur_str,
-            "총 투자비용 (수량×평단가)": tot_str,
-            "예상 1주당 배당금": div_p,
-            "1주당 배당금 (한화/달러)": div_str
-        })
-
-display_df = pd.DataFrame(display_rows)
-
-edited_df = st.data_editor(
-    display_df,
-    num_rows="dynamic",
-    key="editor_holdings_main"
-)
-
-if st.button("🎴 현재 현황 구글 시트 저장 및 계산 반영", key="btn_save_holdings_main"):
-    save_df = edited_df[["티커", "수량(주)", "내 평단가", "예상 1주당 배당금"]]
-    save_data(sheet, save_df)
-    st.success("현재 현황이 구글 시트에 안전하게 저장되었습니다!")
-    st.rerun()
-
-tot_annual_div_post = tot_annual_div_pre * 0.846
-tot_monthly_div_post = tot_annual_div_post / 12
-yield_rate = (tot_annual_div_post / tot_invested * 100) if tot_invested > 0 else 0.0
-
-st.markdown("<br>", unsafe_allow_html=True)
-m1, m2, m3 = st.columns(3)
-with m1:
-    st.metric("📈 포트폴리오 세후 예상 배당률", f"{yield_rate:.2f}%")
-with m2:
-    st.metric("🎁 올해 받은 총 배당금", f"₩{tot_annual_div_post:,.0f}")
-with m3:
-    st.metric(
-        "📅 이번달 / 올해 예상 배당금 (세후)",
-        f"월 ₩{tot_monthly_div_post:,.0f}",
-        delta=f"연간 ₩{tot_annual_div_post:,.0f}"
+def render_account_section(owner_name, sheet, default_df):
+    st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
+    st.caption("💡 푸른색 배경의 수량(주), 내 평단가 셀을 수정하신 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
+    
+    df = load_data(sheet, default_df)
+    
+    edited_df = st.data_editor(
+        df,
+        num_rows="dynamic",
+        key=f"editor_{owner_name}"
     )
 
-st.divider()
+    if st.button(f"💾 {owner_name} 현황 구글 시트 저장 및 계산 반영", key=f"btn_{owner_name}"):
+        save_data(sheet, edited_df)
+        st.success(f"{owner_name} 님의 데이터가 저장되었습니다!")
+        st.rerun()
 
-# ---------------------------------------------------------
-# 5. 미래 배당 세팅 목표 (원본 표 형태 복원)
-# ---------------------------------------------------------
-st.subheader("🎯 미래 배당 세팅 목표")
+    total_invested = 0.0
+    total_annual_div_before = 0.0
+    
+    for idx, row in edited_df.iterrows():
+        ticker = str(row.get("티커", "")).strip()
+        try:
+            qty = float(str(row.get("수량(주)", row.get("수량", 0))).replace(",", ""))
+            avg_price = float(str(row.get("내 평단가", 0)).replace(",", "").replace("$", "").replace("₩", ""))
+            div_per_share = float(str(row.get("예상 1주당 배당금", 0)).replace(",", "").replace("$", "").replace("₩", ""))
+        except:
+            qty, avg_price, div_per_share = 0.0, 0.0, 0.0
 
-target_rows = []
-tot_target_seed = 0.0
-tot_target_div_post = 0.0
+        if ticker:
+            if "KODEX" in ticker or "TIGER" in ticker or "RISE" in ticker or ticker.endswith(".KS") or ticker.endswith(".KQ"):
+                invested = qty * avg_price
+                annual_div = qty * div_per_share * 12
+            else:
+                invested = qty * avg_price * usd_krw
+                annual_div = qty * div_per_share * 12 * usd_krw
 
-for idx, row in DEFAULT_HOLDINGS.iterrows():
-    ticker = str(row.get("티커", "")).strip()
-    qty = float(row.get("수량(주)", 0))
-    div_p = float(row.get("예상 1주당 배당금", 0))
+            total_invested += invested
+            total_annual_div_before += annual_div
 
-    if ticker:
-        cur_p = get_stock_price(ticker)
-        is_kr = "KODEX" in ticker or "TIGER" in ticker or "RISE" in ticker or ticker.endswith(".KS") or ticker.endswith(".KQ")
+    total_annual_div_after = total_annual_div_before * 0.846
+    monthly_div_after = total_annual_div_after / 12
+    yield_rate = (total_annual_div_after / total_invested * 100) if total_invested > 0 else 0.0
 
-        if is_kr:
-            cur_str = f"₩{cur_p:,.0f}" if cur_p > 0 else "₩10,985"
-            seed = qty * (cur_p if cur_p > 0 else 10985)
-            seed_str = f"₩{seed:,.0f}"
-            div_str = f"₩{div_p:,.0f}"
-            annual_div_post = (qty * div_p * 12) * 0.846
-        else:
-            cur_str = f"₩{cur_p * usd_krw:,.0f} [${cur_p:.2f}]" if cur_p > 0 else f"₩84,346 [$59.34]"
-            seed = qty * (cur_p if cur_p > 0 else 59.34) * usd_krw
-            seed_str = f"₩{seed:,.0f} [${qty * (cur_p if cur_p > 0 else 59.34):,.2f}]"
-            div_str = f"₩{div_p * usd_krw:,.0f} [${div_p:.4f}]"
-            annual_div_post = (qty * div_p * 12 * usd_krw) * 0.846
+    st.markdown(f"#### 💰 {owner_name} 계좌 요약")
+    mc1, mc2, mc3 = st.columns(3)
+    with mc1:
+        st.metric("📈 포트폴리오 세후 예상 배당률", f"{yield_rate:.2f}%")
+    with mc2:
+        st.metric("🎁 올해 받은 총 배당금", f"₩{total_annual_div_after:,.0f}")
+    with mc3:
+        st.metric("📅 이번달 / 올해 예상 배당금 (세후)", f"월 ₩{monthly_div_after:,.0f}", delta=f"연간 ₩{total_annual_div_after:,.0f}")
 
-        tot_target_seed += seed
-        tot_target_div_post += annual_div_post
+    return total_invested, total_annual_div_before, total_annual_div_after, monthly_div_after, yield_rate
 
-        target_rows.append({
-            "티커": ticker,
-            "목표 수량(주) ✏️": qty,
-            "예상 1주당 배당금 ✏️": div_p,
-            "현재가 기준 평단가": cur_str,
-            "목표 총 필요 시드": seed_str,
-            "예상 1주당 배당금 (한화/달러)": div_str,
-            "목표 연 예상 배당금 (세후)": f"₩{annual_div_post:,.0f}"
-        })
-
-target_df = pd.DataFrame(target_rows)
-
-edited_target_df = st.data_editor(
-    target_df,
-    num_rows="dynamic",
-    key="editor_target_main"
-)
-
-if st.button("💾 미래 목표 구글 시트 저장 및 즉시 연산", key="btn_save_target_main"):
-    st.success("미래 배당 목표 설정이 업데이트되었습니다!")
-    st.rerun()
+# 재국 & 광희 보유 현황
+invest_j, div_pre_j, div_post_j, m_div_j, yield_j = render_account_section("재국", sheet_jaeguk, DEFAULT_JAEGUK_DATA)
+st.markdown("---")
+invest_g, div_pre_g, div_post_g, m_div_g, yield_g = render_account_section("광희", sheet_gwanghee, DEFAULT_GWANGHEE_DATA)
 
 st.divider()
 
 # ---------------------------------------------------------
-# 6. 미래 예상 배당금 요약 (원본 5열 메트릭 카드)
+# 4. 미래 배당 세팅 목표 (재국 & 광희)
 # ---------------------------------------------------------
-st.subheader("🔮 미래 예상 배당금 요약")
+col_target_j, col_target_g = st.columns(2)
 
-add_seed_needed = max(0.0, tot_target_seed - tot_invested)
+with col_target_j:
+    st.subheader("🎯 미래 배당 세팅 목표 (재국)")
+    target_j = st.number_input("재국 목표 월 배당금 (원화)", value=2000000, step=100000, key="target_j")
+    current_m_j = m_div_j
+    progress_j = min(current_m_j / target_j, 1.0) if target_j > 0 else 0.0
+    st.progress(progress_j)
+    st.caption(f"현재 월 배당금: ₩{current_m_j:,.0f} / 목표: ₩{target_j:,.0f} ({progress_j*100:.1f}%)")
+
+with col_target_g:
+    st.subheader("🎯 미래 배당 세팅 목표 (광희)")
+    target_g = st.number_input("광희 목표 월 배당금 (원화)", value=1000000, step=100000, key="target_g")
+    current_m_g = m_div_g
+    progress_g = min(current_m_g / target_g, 1.0) if target_g > 0 else 0.0
+    st.progress(progress_g)
+    st.caption(f"현재 월 배당금: ₩{current_m_g:,.0f} / 목표: ₩{target_g:,.0f} ({progress_g*100:.1f}%)")
+
+st.divider()
+
+# ---------------------------------------------------------
+# 5. 미래 재국♡광희 예상 배당금 요약
+# ---------------------------------------------------------
+st.subheader("🎯 미래 재국♡광희 예상 배당금 요약")
+
+tot_invest = invest_j + invest_g
+tot_div_pre = div_pre_j + div_pre_g
+tot_div_post = div_post_j + div_post_g
+tot_m_div = tot_div_post / 12
+tot_yield = (tot_div_post / tot_invest * 100) if tot_invest > 0 else 0.0
 
 fc1, fc2, fc3, fc4, fc5 = st.columns(5)
 with fc1:
-    st.metric("💵 세전 예상 총 배당금 (연간)", f"₩{tot_annual_div_pre:,.0f}")
+    st.metric("💵 세전 예상 총 배당금 (연간)", f"₩{tot_div_pre:,.0f}")
 with fc2:
-    st.metric("💰 세후 예상 총 배당금 (연간)", f"₩{tot_annual_div_post:,.0f}")
+    st.metric("💰 세후 예상 총 배당금 (연간)", f"₩{tot_div_post:,.0f}")
 with fc3:
-    st.metric("📅 월 예상 배당금 (세후)", f"₩{tot_monthly_div_post:,.0f}")
+    st.metric("📅 월 예상 배당금 (세후)", f"₩{tot_m_div:,.0f}")
 with fc4:
-    st.metric("📈 세후 예상 배당률 (%)", f"{yield_rate:.2f}%")
+    st.metric("📈 세후 예상 배당률 (%)", f"{tot_yield:.2f}%")
 with fc5:
-    st.metric(
-        "🎯 목표 달성 추가 필요 시드",
-        f"₩{add_seed_needed:,.0f}",
-        delta=f"목표시드: ₩{tot_target_seed:,.0f}"
-    )
+    st.metric("🎯 총 합산 투자 비용", f"₩{tot_invest:,.0f}")
