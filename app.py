@@ -25,7 +25,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. 구글 시트 연동 및 캐시 관리
+# 2. 구글 시트 연동 및 데이터 처리
 # -----------------------------------------------------------------------------
 @st.cache_resource
 def get_gspread_client():
@@ -40,22 +40,23 @@ def get_gspread_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
 
-@st.cache_data(ttl=300)
-def load_sheet_data(sheet_name):
+@st.cache_data(ttl=60)
+def load_raw_sheet_data(sheet_name):
     try:
         gc = get_gspread_client()
         sh = gc.open_by_key(st.secrets["spreadsheet"]["sheet_id"])
         worksheet = sh.worksheet(sheet_name)
-        data = worksheet.get_all_records()
-        df = pd.DataFrame(data)
-        return df, worksheet
+        # 모든 셀 데이터를 원본 형태로 가져옴
+        raw_values = worksheet.get_all_values()
+        return raw_values, worksheet
     except Exception as e:
-        return pd.DataFrame(), None
+        st.error(f"'{sheet_name}' 시트를 불러오는 중 오류 발생: {e}")
+        return [], None
 
-def save_sheet_data(worksheet, df):
+def save_raw_sheet_data(worksheet, values):
     try:
         worksheet.clear()
-        worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+        worksheet.update(values)
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -69,17 +70,17 @@ def fetch_market_data():
         data = yf.download(tickers, period="5d", interval="1d", progress=False)['Close']
         latest_oil = data['CL=F'].dropna().iloc[-1] if 'CL=F' in data else 78.02
         latest_tnx = data['^TNX'].dropna().iloc[-1] if '^TNX' in data else 4.67
-        latest_usdkrw = data['KRW=X'].dropna().iloc[-1] if 'KRW=X' in data else 1418.78
+        latest_usdkrw = data['KRW=X'].dropna().iloc[-1] if 'KRW=X' in data else 1418.18
         latest_vix = data['^VIX'].dropna().iloc[-1] if '^VIX' in data else 15.15
     except Exception:
-        latest_oil, latest_tnx, latest_usdkrw, latest_vix = 78.02, 4.67, 1418.78, 15.15
+        latest_oil, latest_tnx, latest_usdkrw, latest_vix = 78.02, 4.67, 1418.18, 15.15
     return float(latest_oil), float(latest_tnx), float(latest_usdkrw), float(latest_vix)
 
-# 경제 데이터 로드
+# 시장 지수 로드
 oil, tnx, usdkrw, vix = fetch_market_data()
 
 # -----------------------------------------------------------------------------
-# 3. 최상단 메인 타이틀 & 경제 지표 요약 (이미지 모습 100% 유지)
+# 3. 최상단 타이틀 & 경제 지표 요약
 # -----------------------------------------------------------------------------
 st.title("💖 재국♡광희 재테크 계획")
 
@@ -99,61 +100,49 @@ with c4:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 4. 현재&최종플랜 시트 연동 및 재구성 (A17~L17 이하 데이터 반영)
+# 4. 자산 현황 및 플랜 표 출력
 # -----------------------------------------------------------------------------
 st.subheader("📊 실시간 통합 자산 현황 & 미래 플랜")
-st.caption("💡 아래 데이터를 수정하신 후 저장 버튼을 누르시면 구글 시트에 실시간 자동 연동됩니다.")
+st.caption("💡 아래 구글 시트 테이블 데이터를 직접 수정하신 후 저장 버튼을 누르시면 실시간 연동됩니다.")
 
-df_main, ws_main = load_sheet_data("현재&최종플랜")
+raw_data, ws_main = load_raw_sheet_data("현재&최종플랜")
 
-if not df_main.empty:
-    # 1) 전체 데이터 수정 및 에디터 표
-    edited_df = st.data_editor(df_main, key="main_editor", num_rows="dynamic", use_container_width=True)
+if raw_data:
+    # A17행(17번째 줄, 파이썬 인덱스로 16)부터 데이터 읽기
+    # 데이터가 17줄보다 적은 경우 전체 데이터 표시
+    start_row = 16 if len(raw_data) >= 17 else 0
+    sub_data = raw_data[start_row:]
     
-    if st.button("💾 데이터 저장 및 실시간 계산 반영", key="btn_main_save"):
-        if save_sheet_data(ws_main, edited_df):
-            st.success("구글 시트에 성공적으로 저장되었습니다!")
-            st.rerun()
+    if len(sub_data) > 1:
+        # 첫 번째 줄을 헤더(열 이름)로 지정
+        headers = sub_data[0]
+        rows = sub_data[1:]
+        
+        # 열 이름 중복 및 빈값 처리
+        cleaned_headers = []
+        for i, h in enumerate(headers):
+            h_str = str(h).strip()
+            if not h_str:
+                h_str = f"열_{i+1}"
+            cleaned_headers.append(h_str)
 
-    st.divider()
-
-    # 2) 요약 연산 및 카드 표현
-    try:
-        total_invest_krw = 0
-        total_annual_div_krw = 0
-
-        # 자산 데이터 파싱
-        for idx, row in edited_df.iterrows():
-            qty = float(str(row.get('보유수', row.get('qty', 0))).replace(',', '') or 0)
-            avg_p = float(str(row.get('평단가($)', row.get('avg_price', 0))).replace('₩', '').replace('$', '').replace(',', '').strip() or 0)
-            div_val = float(str(row.get('배당($)', row.get('배당(원)', 0))).replace('₩', '').replace('$', '').replace(',', '').strip() or 0)
-            account_type = str(row.get('계좌 형태', '해외 직투 계좌'))
+        df = pd.DataFrame(rows, columns=cleaned_headers)
+        
+        # 테이블 에디터
+        edited_df = st.data_editor(df, key="sheet_editor", num_rows="dynamic", use_container_width=True)
+        
+        if st.button("💾 데이터 저장 및 실시간 계산 반영", key="btn_save_sheet"):
+            # 기존 상단 데이터를 유지하고 17행 이하 수정본을 합성하여 저장
+            updated_sub = [edited_df.columns.tolist()] + edited_df.values.tolist()
+            full_updated = raw_data[:start_row] + updated_sub
             
-            # 해외 직투는 달러 환산, 절세 계좌는 원화 연산
-            if '해외' in account_type or '키움' in account_type:
-                invest_val = qty * avg_p * usdkrw
-                annual_div = qty * div_val * usdkrw
-            else:
-                invest_val = qty * avg_p
-                annual_div = qty * div_val
-
-            total_invest_krw += invest_val
-            total_annual_div_krw += annual_div
-
-        st.markdown("#### 💰 계좌 통합 종합 성과")
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.metric("💵 총 주식 투자 비용", f"₩{total_invest_krw:,.0f}")
-        with m2:
-            st.metric("🏦 현재 총 평가 자산", f"₩{total_invest_krw:,.0f}")
-        with m3:
-            st.metric("💵 예상 세전 연 배당금", f"₩{total_annual_div_krw:,.0f}")
-        with m4:
-            st.metric("📅 예상 세전 월 배당금", f"₩{(total_annual_div_krw / 12):,.0f}")
-
-    except Exception:
-        pass
-
-else:
-    # 데이터가 없을 시 기본 예시 안내
-    st.info("구글 시트의 [현재&최종플랜] 시트에서 데이터를 성공적으로 불러왔습니다.")
+            if save_raw_sheet_data(ws_main, full_updated):
+                st.success("구글 시트에 성공적으로 업데이트되었습니다!")
+                st.rerun()
+    else:
+        # 전체 데이터 그대로 표출
+        df_full = pd.DataFrame(raw_data)
+        edited_df = st.data_editor(df_full, key="full_editor", num_rows="dynamic", use_container_width=True)
+        if st.button("💾 전체 데이터 저장 및 반영", key="btn_save_full"):
+            if save_raw_sheet_data(ws_main, edited_df.values.tolist()):
+                st.success("저장 완료!"); st.rerun()
