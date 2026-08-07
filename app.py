@@ -536,13 +536,23 @@ with main_tab2:
         with sum_col1:
             st.metric(label=f"🏦 [{owner_choice}] 장부 계좌 총 누적 배당금", value=f"₩{total_sum:,.0f}")
             
-            # 티커별 총 수령액 요약 표
+            # 티커별 총 수령액 요약 표 (숫자 데이터로 정렬 문제 완벽 해결)
             st.markdown("**📌 티커별 누적 수령 배당금**")
             ticker_summary = df_hist_raw.groupby("ticker")["amount_krw"].sum().reset_index()
-            ticker_summary["비중 (%)"] = (ticker_summary["amount_krw"] / total_sum * 100).map("{:.1f}%".format)
-            ticker_summary["총 수령 금액"] = ticker_summary["amount_krw"].map("₩{:,.0f}".format)
+            ticker_summary["비중 (%)"] = (ticker_summary["amount_krw"] / total_sum * 100).round(1)
+            
+            # 금액 내림차순 기본 정렬
+            ticker_summary = ticker_summary.sort_values(by="amount_krw", ascending=False)
+            
             st.dataframe(
-                ticker_summary[["ticker", "총 수령 금액", "비중 (%)"]].rename(columns={"ticker": "티커"}),
+                ticker_summary.rename(columns={
+                    "ticker": "티커",
+                    "amount_krw": "총 수령 금액 (₩)"
+                }),
+                column_config={
+                    "총 수령 금액 (₩)": st.column_config.NumberColumn("총 수령 금액 (₩)", format="₩%d"),
+                    "비중 (%)": st.column_config.NumberColumn("비중 (%)", format="%.1f%%")
+                },
                 use_container_width=True, hide_index=True
             )
 
@@ -552,13 +562,11 @@ with main_tab2:
             monthly_summary = monthly_summary.sort_values("month")
             monthly_summary.rename(columns={"month": "입금 월", "amount_krw": "배당금 (₩)"}, inplace=True)
             
-            # 성장 트렌드 바 차트
             st.bar_chart(monthly_summary.set_index("입금 월"), use_container_width=True)
 
         st.markdown("---")
         st.markdown(f"#### 📜 [{owner_choice}] 배당금 입금 상세 내역 장부")
 
-        # 입금 금액 시각적 바 제거 및 깔끔한 숫자로 변경
         edited_hist = st.data_editor(
             df_hist_raw[["month", "ticker", "amount_krw"]],
             column_config={
