@@ -29,13 +29,18 @@ def init_gspread():
 
 try:
     spreadsheet = init_gspread()
-    # 첫 번째 시트는 재국, '광희' 이름의 시트는 광희
+    # 첫 번째 워크시트(인덱스 0)를 무조건 기본 데이터(재국)로 설정
     sheet_jaeguk = spreadsheet.get_worksheet(0)
+    
+    # '광희' 시트 검색, 없으면 생성
     try:
         sheet_gwanghee = spreadsheet.worksheet("광희")
-    except:
-        # 광희 시트가 없을 경우 첫 번째 시트를 공유하도록 예외 처리
-        sheet_gwanghee = sheet_jaeguk
+    except gspread.exceptions.WorksheetNotFound:
+        sheet_gwanghee = spreadsheet.add_worksheet(title="광희", rows="100", cols="20")
+        # 헤더 복사
+        headers = sheet_jaeguk.row_values(1)
+        if headers:
+            sheet_gwanghee.append_row(headers)
 except Exception as e:
     st.error(f"구글 시트 연동 실패: {e}")
     st.stop()
@@ -80,11 +85,10 @@ def get_macro_data():
 @st.cache_data(ttl=600)
 def get_stock_info(ticker_symbol):
     try:
-        t = yf.Ticker(ticker_symbol)
+        t = yf.Ticker(str(ticker_symbol).strip())
         info = t.info
         current_price = info.get('currentPrice') or info.get('regularMarketPrice') or 0.0
         dividend_yield = info.get('dividendYield') or 0.0
-        # yfinance dividendYield는 0.03 형태일 수 있음
         if dividend_yield > 1:
             dividend_yield = dividend_yield / 100
         return current_price, dividend_yield
@@ -94,17 +98,14 @@ def get_stock_info(ticker_symbol):
 # ---------------------------------------------------------
 # 4. DASHBOARD HEADER & MACRO INDICATORS
 # ---------------------------------------------------------
-# 1. 타이틀 변경
 st.title("💖 재국♡광희 인생 계획")
 
-# 2. 오늘 날짜 및 요일 표기
 weekday_kr = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
 now = datetime.now()
 today_str = f"📅 오늘은 {now.strftime('%Y년 %m월 %d일')} {weekday_kr[now.weekday()]}입니다."
 st.markdown(f"#### {today_str}")
 st.divider()
 
-# 거시 경제 지표 Display
 macro = get_macro_data()
 usd_krw = macro.get("환율 (USD/KRW)", 1350.0)
 
@@ -124,15 +125,14 @@ st.divider()
 # 5. INTEGRATED HOLDINGS PROCESSOR
 # ---------------------------------------------------------
 def process_holdings_ui(owner_name, sheet):
-    # 3 & 4. 보유 현황 타이틀 설정
     st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
     
     df = load_data(sheet)
+    
     if df.empty:
         st.info(f"{owner_name} 님의 등록된 보유 주식이 없습니다.")
         return df, 0.0, 0.0
 
-    # 데이터 편집기
     edited_df = st.data_editor(
         df,
         num_rows="dynamic",
@@ -144,18 +144,19 @@ def process_holdings_ui(owner_name, sheet):
         st.success(f"{owner_name} 님의 데이터가 구글 시트에 저장되었습니다!")
         st.rerun()
 
-    # 실시간 데이터 계산
     total_invested = 0.0
     total_annual_div = 0.0
 
     for idx, row in edited_df.iterrows():
-        ticker = row.get("티커", "")
-        qty = float(row.get("수량", 0))
-        avg_price = float(row.get("내 평단가", 0))
+        ticker = str(row.get("티커", "")).strip()
+        try:
+            qty = float(row.get("수량", 0))
+            avg_price = float(row.get("내 평단가", 0))
+        except:
+            qty, avg_price = 0.0, 0.0
 
         if ticker:
             cur_price, div_yield = get_stock_info(ticker)
-            # 원화/달러 구분 간이 처리 (티커 끝이 .KS/.KQ면 원화)
             if not (ticker.endswith(".KS") or ticker.endswith(".KQ")):
                 invested = qty * avg_price * usd_krw
                 annual_div = (qty * cur_price * usd_krw) * div_yield
@@ -168,7 +169,6 @@ def process_holdings_ui(owner_name, sheet):
 
     return edited_df, total_invested, total_annual_div
 
-# 재국 & 광희 섹션 처리
 df_j, invest_j, div_j = process_holdings_ui("재국", sheet_jaeguk)
 st.markdown("---")
 df_g, invest_g, div_g = process_holdings_ui("광희", sheet_gwanghee)
@@ -178,7 +178,6 @@ st.divider()
 # ---------------------------------------------------------
 # 6. SUMMARY SECTION
 # ---------------------------------------------------------
-# 5 & 6. 계좌 성과 및 배당금 종합 요약
 st.subheader("💰 계좌 성과 및 배당금 종합 요약")
 
 tab_j, tab_g = st.tabs(["재국 계좌 요약", "광희 계좌 요약"])
@@ -204,7 +203,6 @@ st.divider()
 # ---------------------------------------------------------
 # 7. FUTURE DIVIDEND TARGETS
 # ---------------------------------------------------------
-# 7. 미래 배당 세팅 목표
 col_target_j, col_target_g = st.columns(2)
 
 with col_target_j:
@@ -228,7 +226,6 @@ st.divider()
 # ---------------------------------------------------------
 # 8. COMBINED FUTURE DIVIDEND SUMMARY
 # ---------------------------------------------------------
-# 8. 미래 재국♡광희 예상 배당금 요약
 st.subheader("👩‍❤️‍👨 미래 재국♡광희 예상 배당금")
 
 total_combined_invest = invest_j + invest_g
