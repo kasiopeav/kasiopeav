@@ -2,6 +2,8 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import requests
+import json
+import re
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -9,19 +11,19 @@ st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver3)", layo
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
-# 한국 종목명 -> 티커 심볼 & 기본 1주당 배당금 보완 매핑
+# 한국 종목명 -> 기본 1주당 배당금 및 네이버 시세 보완
 KR_TICKER_MAP = {
-    "KODEX 미국배당커버드콜 액티브": {"symbol": "441680.KS", "code": "441680", "default_div": 99.0},
-    "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"symbol": "480410.KS", "code": "480410", "default_div": 149.0},
-    "KODEX 200타겟위클리커버드콜": {"symbol": "480460.KS", "code": "480460", "default_div": 252.0},
-    "KODEX 금융고배당TOP10타겟위클리커버트콜": {"symbol": "489240.KS", "code": "489240", "default_div": 162.0},
-    "RISE 미국테크100데일리고정커버드콜": {"symbol": "486250.KS", "code": "486250", "default_div": 271.0},
-    "TIGER 미국나스닥 100 타겟 데일리 커버드콜": {"symbol": "482730.KS", "code": "482730", "default_div": 127.0},
-    "KODEX 미국S&P500 데일리 커버드콜 OTM": {"symbol": "482720.KS", "code": "482720", "default_div": 119.0}
+    "KODEX 미국배당커버드콜 액티브": {"code": "441680", "default_div": 99.0},
+    "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"code": "480410", "default_div": 149.0},
+    "KODEX 200타겟위클리커버드콜": {"code": "480460", "default_div": 252.0},
+    "KODEX 금융고배당TOP10타겟위클리커버트콜": {"code": "489240", "default_div": 162.0},
+    "RISE 미국테크100데일리고정커버드콜": {"code": "486250", "default_div": 271.0},
+    "TIGER 미국나스닥 100 타겟 데일리 커버드콜": {"code": "482730", "default_div": 127.0},
+    "KODEX 미국S&P500 데일리 커버드콜 OTM": {"code": "482720", "default_div": 119.0}
 }
 
 # ---------------------------------------------------------
-# 0. 구글 시트 연동 & 실시간 시세 처리
+# 0. 구글 시트 연동 & 네이버 증권 실시간 시세 조회
 # ---------------------------------------------------------
 @st.cache_resource
 def get_gspread_client():
@@ -40,24 +42,23 @@ def get_gspread_client():
 
 gc = get_gspread_client()
 
-# 네이버 증권에서 국내 ETF 실시간 시세 조회
-def fetch_kr_stock_price(code):
+# 네이버 금융 실시간 시세 조회 (파싱 강화)
+def fetch_kr_stock_price(ticker_name):
+    code = KR_TICKER_MAP.get(ticker_name, {}).get("code")
+    if not code:
+        return None
     try:
-        url = f"https://polaroid.naver.com/api/v1/stock/{code}/realtime"
+        url = f"https://finance.naver.com/item/sise_day.naver?code={code}"
         headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=3).json()
-        price = res.get("closePrice") or res.get("now")
-        return float(price)
+        res = requests.get(url, headers=headers, timeout=3)
+        tables = pd.read_html(res.text)
+        if tables and not tables[0].empty:
+            df_day = tables[0].dropna(how="all")
+            latest_price = str(df_day.iloc[0]["종가"]).replace(",", "").strip()
+            return float(latest_price)
     except Exception:
-        try:
-            url_fallback = f"https://finance.naver.com/item/sise_json.naver?code={code}&type=recent"
-            res_fb = requests.get(url_fallback, headers=headers, timeout=3).text
-            import json, re
-            clean_text = re.sub(r'[^\w\s:,\{\}\[\]"]', '', res_fb)
-            # 네이버 시세 백업 파싱
-            return float(json.loads(clean_text)["now"])
-        except Exception:
-            return None
+        pass
+    return None
 
 DEFAULT_PORTFOLIO_JG = [
     {"ticker": "JEPQ", "ticker_symbol": "JEPQ", "qty": 660, "avg_price": 53.71, "currency": "USD", "last_div": 0.56, "total_received_div": 3101187},
@@ -149,7 +150,7 @@ st.markdown("""
     }
     
     div[data-testid="stDataEditor"] div[role="columnheader"] { background-color: #e2e8f0 !important; color: #0f172a !important; font-weight: 800 !important; font-size: 15px !important; border-bottom: 2px solid #94a3b8 !important; }
-    div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(2), div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(3) { background-color: #dbeafe !important; color: #1e40af !important; }
+    div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(2) { background-color: #dbeafe !important; color: #1e40af !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -203,8 +204,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
     for item in st.session_state[portfolio_key]:
         ticker_name = item.get("ticker", "")
-        kr_info = KR_TICKER_MAP.get(ticker_name, {})
-        symbol = item.get("ticker_symbol") or kr_info.get("symbol") or ticker_name
+        symbol = item.get("ticker_symbol", ticker_name)
         
         try: qty = float(item.get("qty", 0) or 0)
         except Exception: qty = 0.0
@@ -225,12 +225,8 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
         total_received_div_all_krw += tot_div
 
-        # 국내 ETF는 네이버 증권 시체 API로 연동 (시세 오류 해결)
-        current_p = None
-        if ticker_name in KR_TICKER_MAP:
-            kr_code = KR_TICKER_MAP[ticker_name]["code"]
-            current_p = fetch_kr_stock_price(kr_code)
-
+        # 국내 주식 현재가 조회 (네이버 증권 시체 API)
+        current_p = fetch_kr_stock_price(ticker_name)
         if current_p is None:
             try:
                 current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
@@ -270,6 +266,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
     df_display = pd.DataFrame(df_data)
 
+    # 중복 내 평단가 열 완전 삭제 반영
     edited_df = st.data_editor(
         df_display,
         disabled=["티커", "현재가 (한화/달러)", "총 투자비용 (수량×평단가)", "1주당 배당금 (한화/달러)", "월 예상 배당금 (세후)", "현재 수익률"],
@@ -318,8 +315,7 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
 
     for item in st.session_state[target_key]:
         ticker_name = item.get("ticker", "")
-        kr_info = KR_TICKER_MAP.get(ticker_name, {})
-        symbol = item.get("ticker_symbol") or kr_info.get("symbol") or ticker_name
+        symbol = item.get("ticker_symbol", ticker_name)
         
         try: qty = float(item.get("qty", 0) or 0)
         except Exception: qty = 0.0
@@ -332,11 +328,7 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
             last_div = KR_TICKER_MAP[ticker_name]["default_div"]
 
-        current_p = None
-        if ticker_name in KR_TICKER_MAP:
-            kr_code = KR_TICKER_MAP[ticker_name]["code"]
-            current_p = fetch_kr_stock_price(kr_code)
-
+        current_p = fetch_kr_stock_price(ticker_name)
         if current_p is None:
             try: current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
             except Exception: 
