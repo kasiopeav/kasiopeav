@@ -37,7 +37,6 @@ try:
         sheet_gwanghee = spreadsheet.worksheet("광희")
     except gspread.exceptions.WorksheetNotFound:
         sheet_gwanghee = spreadsheet.add_worksheet(title="광희", rows="100", cols="20")
-        # 헤더 복사
         headers = sheet_jaeguk.row_values(1)
         if headers:
             sheet_gwanghee.append_row(headers)
@@ -49,8 +48,15 @@ except Exception as e:
 # 2. DATA LOAD & SAVE FUNCTIONS
 # ---------------------------------------------------------
 def load_data(sheet):
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
+    rows = sheet.get_all_values()
+    if not rows or len(rows) < 2:
+        return pd.DataFrame()
+    
+    headers = [str(h).strip() for h in rows[0]]
+    # 빈 열 이름 처리
+    headers = [h if h != "" else f"Unnamed_{i}" for i, h in enumerate(headers)]
+    
+    df = pd.DataFrame(rows[1:], columns=headers)
     return df
 
 def save_data(sheet, df):
@@ -147,25 +153,39 @@ def process_holdings_ui(owner_name, sheet):
     total_invested = 0.0
     total_annual_div = 0.0
 
-    for idx, row in edited_df.iterrows():
-        ticker = str(row.get("티커", "")).strip()
-        try:
-            qty = float(row.get("수량", 0))
-            avg_price = float(row.get("내 평단가", 0))
-        except:
-            qty, avg_price = 0.0, 0.0
+    # 컬럼 이름 유연하게 탐색 (티커, 수량, 내 평단가)
+    ticker_col = next((col for col in edited_df.columns if "티커" in col or "Ticker" in col.lower()), None)
+    qty_col = next((col for col in edited_df.columns if "수량" in col or "Qty" in col.lower()), None)
+    price_col = next((col for col in edited_df.columns if "평단가" in col or "Price" in col.lower()), None)
 
-        if ticker:
-            cur_price, div_yield = get_stock_info(ticker)
-            if not (ticker.endswith(".KS") or ticker.endswith(".KQ")):
-                invested = qty * avg_price * usd_krw
-                annual_div = (qty * cur_price * usd_krw) * div_yield
-            else:
-                invested = qty * avg_price
-                annual_div = (qty * cur_price) * div_yield
+    if ticker_col and qty_col and price_col:
+        for idx, row in edited_df.iterrows():
+            ticker = str(row.get(ticker_col, "")).strip()
+            
+            # 수량 및 평단가에서 숫자 이외 문자 제거 처리
+            try:
+                raw_qty = str(row.get(qty_col, "0")).replace(",", "").replace("$", "").replace("₩", "").strip()
+                qty = float(raw_qty) if raw_qty else 0.0
+            except:
+                qty = 0.0
 
-            total_invested += invested
-            total_annual_div += annual_div
+            try:
+                raw_price = str(row.get(price_col, "0")).replace(",", "").replace("$", "").replace("₩", "").strip()
+                avg_price = float(raw_price) if raw_price else 0.0
+            except:
+                avg_price = 0.0
+
+            if ticker:
+                cur_price, div_yield = get_stock_info(ticker)
+                if not (ticker.endswith(".KS") or ticker.endswith(".KQ")):
+                    invested = qty * avg_price * usd_krw
+                    annual_div = (qty * cur_price * usd_krw) * div_yield
+                else:
+                    invested = qty * avg_price
+                    annual_div = (qty * cur_price) * div_yield
+
+                total_invested += invested
+                total_annual_div += annual_div
 
     return edited_df, total_invested, total_annual_div
 
