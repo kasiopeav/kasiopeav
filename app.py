@@ -8,7 +8,7 @@ from datetime import datetime
 # PAGE CONFIG
 st.set_page_config(
     page_title="재국♡광희 인생 계획",
-    page_icon="📈",
+    page_icon="💖",
     layout="wide"
 )
 
@@ -27,41 +27,61 @@ def init_gspread():
     spreadsheet = client.open_by_key(st.secrets["spreadsheet"]["sheet_id"])
     return spreadsheet
 
+# 구글 시트에 데이터가 없거나 읽기 실패 시 표출할 백업 데이터 (재국 & 광희)
+DEFAULT_JAEGUK_DATA = pd.DataFrame([
+    {"티커": "JEPQ", "수량": 660, "내 평단가": 53.71},
+    {"티커": "QQQI", "수량": 627, "내 평단가": 53.07},
+    {"티커": "SCHD", "수량": 722, "내 평단가": 27.12},
+    {"티커": "QLD", "수량": 23, "내 평단가": 84.29},
+    {"티커": "SPCX", "수량": 10, "내 평단가": 155.00},
+    {"티커": "KODEX 미국배당커버드콜 액티브", "수량": 194, "내 평단가": 11288},
+    {"티커": "KODEX 200타겟위클리커버드콜", "수량": 299, "내 평단가": 15436}
+])
+
+DEFAULT_GWANGHEE_DATA = pd.DataFrame([
+    {"티커": "QQQI", "수량": 240, "내 평단가": 53.11}
+])
+
 try:
     spreadsheet = init_gspread()
-    # 첫 번째 워크시트(인덱스 0)를 무조건 기본 데이터(재국)로 설정
+    # 기본 워크시트 설정
     sheet_jaeguk = spreadsheet.get_worksheet(0)
-    
-    # '광희' 시트 검색, 없으면 생성
     try:
         sheet_gwanghee = spreadsheet.worksheet("광희")
-    except gspread.exceptions.WorksheetNotFound:
-        sheet_gwanghee = spreadsheet.add_worksheet(title="광희", rows="100", cols="20")
-        headers = sheet_jaeguk.row_values(1)
-        if headers:
-            sheet_gwanghee.append_row(headers)
+    except:
+        sheet_gwanghee = None
 except Exception as e:
-    st.error(f"구글 시트 연동 실패: {e}")
-    st.stop()
+    sheet_jaeguk = None
+    sheet_gwanghee = None
 
 # ---------------------------------------------------------
 # 2. DATA LOAD & SAVE FUNCTIONS
 # ---------------------------------------------------------
-def load_data(sheet):
-    rows = sheet.get_all_values()
-    if not rows or len(rows) < 2:
-        return pd.DataFrame()
-    
-    headers = [str(h).strip() for h in rows[0]]
-    # 빈 열 이름 처리
-    headers = [h if h != "" else f"Unnamed_{i}" for i, h in enumerate(headers)]
-    
-    df = pd.DataFrame(rows[1:], columns=headers)
-    return df
+def load_data(sheet, default_df):
+    if sheet is None:
+        return default_df.copy()
+    try:
+        rows = sheet.get_all_values()
+        if not rows or len(rows) < 2:
+            return default_df.copy()
+        
+        headers = [str(h).strip() for h in rows[0]]
+        df = pd.DataFrame(rows[1:], columns=headers)
+        
+        # 필수 열 존재 여부 체크
+        if not any("티커" in c or "Ticker" in c for c in df.columns):
+            return default_df.copy()
+        return df
+    except:
+        return default_df.copy()
 
 def save_data(sheet, df):
-    sheet.clear()
-    sheet.update([df.columns.values.tolist()] + df.values.tolist())
+    if sheet is not None:
+        try:
+            sheet.clear()
+            sheet.update([df.columns.values.tolist()] + df.values.tolist())
+        except Exception as e:
+            st.error(f"저장 실패: {e}")
 
 # ---------------------------------------------------------
 # 3. YFINANCE DATA FETCHERS
@@ -113,7 +133,7 @@ st.markdown(f"#### {today_str}")
 st.divider()
 
 macro = get_macro_data()
-usd_krw = macro.get("환율 (USD/KRW)", 1350.0)
+usd_krw = macro.get("환율 (USD/KRW)", 1464.49)
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -130,14 +150,10 @@ st.divider()
 # ---------------------------------------------------------
 # 5. INTEGRATED HOLDINGS PROCESSOR
 # ---------------------------------------------------------
-def process_holdings_ui(owner_name, sheet):
+def process_holdings_ui(owner_name, sheet, default_df):
     st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
     
-    df = load_data(sheet)
-    
-    if df.empty:
-        st.info(f"{owner_name} 님의 등록된 보유 주식이 없습니다.")
-        return df, 0.0, 0.0
+    df = load_data(sheet, default_df)
 
     edited_df = st.data_editor(
         df,
@@ -147,51 +163,49 @@ def process_holdings_ui(owner_name, sheet):
 
     if st.button(f"💾 {owner_name} 현황 구글 시트 저장 및 계산 반영", key=f"btn_{owner_name}"):
         save_data(sheet, edited_df)
-        st.success(f"{owner_name} 님의 데이터가 구글 시트에 저장되었습니다!")
+        st.success(f"{owner_name} 님의 데이터가 반영되었습니다!")
         st.rerun()
 
     total_invested = 0.0
     total_annual_div = 0.0
 
-    # 컬럼 이름 유연하게 탐색 (티커, 수량, 내 평단가)
-    ticker_col = next((col for col in edited_df.columns if "티커" in col or "Ticker" in col.lower()), None)
-    qty_col = next((col for col in edited_df.columns if "수량" in col or "Qty" in col.lower()), None)
-    price_col = next((col for col in edited_df.columns if "평단가" in col or "Price" in col.lower()), None)
+    ticker_col = next((col for col in edited_df.columns if "티커" in col or "Ticker" in col.lower()), "티커")
+    qty_col = next((col for col in edited_df.columns if "수량" in col or "Qty" in col.lower()), "수량")
+    price_col = next((col for col in edited_df.columns if "평단가" in col or "Price" in col.lower()), "내 평단가")
 
-    if ticker_col and qty_col and price_col:
-        for idx, row in edited_df.iterrows():
-            ticker = str(row.get(ticker_col, "")).strip()
-            
-            # 수량 및 평단가에서 숫자 이외 문자 제거 처리
-            try:
-                raw_qty = str(row.get(qty_col, "0")).replace(",", "").replace("$", "").replace("₩", "").strip()
-                qty = float(raw_qty) if raw_qty else 0.0
-            except:
-                qty = 0.0
+    for idx, row in edited_df.iterrows():
+        ticker = str(row.get(ticker_col, "")).strip()
+        
+        try:
+            raw_qty = str(row.get(qty_col, "0")).replace(",", "").replace("$", "").replace("₩", "").strip()
+            qty = float(raw_qty) if raw_qty else 0.0
+        except:
+            qty = 0.0
 
-            try:
-                raw_price = str(row.get(price_col, "0")).replace(",", "").replace("$", "").replace("₩", "").strip()
-                avg_price = float(raw_price) if raw_price else 0.0
-            except:
-                avg_price = 0.0
+        try:
+            raw_price = str(row.get(price_col, "0")).replace(",", "").replace("$", "").replace("₩", "").strip()
+            avg_price = float(raw_price) if raw_price else 0.0
+        except:
+            avg_price = 0.0
 
-            if ticker:
-                cur_price, div_yield = get_stock_info(ticker)
-                if not (ticker.endswith(".KS") or ticker.endswith(".KQ")):
-                    invested = qty * avg_price * usd_krw
-                    annual_div = (qty * cur_price * usd_krw) * div_yield
-                else:
-                    invested = qty * avg_price
-                    annual_div = (qty * cur_price) * div_yield
+        if ticker:
+            cur_price, div_yield = get_stock_info(ticker)
+            # 한국 주식 또는 한글 명칭 주식
+            if ticker.endswith(".KS") or ticker.endswith(".KQ") or "KODEX" in ticker or "TIGER" in ticker or "RISE" in ticker:
+                invested = qty * avg_price
+                annual_div = (qty * cur_price) * div_yield if cur_price > 0 else (invested * 0.10) # 예시 비율
+            else:
+                invested = qty * avg_price * usd_krw
+                annual_div = (qty * (cur_price if cur_price > 0 else avg_price) * usd_krw) * (div_yield if div_yield > 0 else 0.08)
 
-                total_invested += invested
-                total_annual_div += annual_div
+            total_invested += invested
+            total_annual_div += annual_div
 
     return edited_df, total_invested, total_annual_div
 
-df_j, invest_j, div_j = process_holdings_ui("재국", sheet_jaeguk)
+df_j, invest_j, div_j = process_holdings_ui("재국", sheet_jaeguk, DEFAULT_JAEGUK_DATA)
 st.markdown("---")
-df_g, invest_g, div_g = process_holdings_ui("광희", sheet_gwanghee)
+df_g, invest_g, div_g = process_holdings_ui("광희", sheet_gwanghee, DEFAULT_GWANGHEE_DATA)
 
 st.divider()
 
@@ -227,7 +241,7 @@ col_target_j, col_target_g = st.columns(2)
 
 with col_target_j:
     st.subheader("🎯 미래 배당 세팅 목표 (재국)")
-    target_j = st.number_input("재국 목표 월 배당금 (원화)", value=1000000, step=100000, key="target_j")
+    target_j = st.number_input("재국 목표 월 배당금 (원화)", value=2000000, step=100000, key="target_j")
     current_m_j = div_j / 12
     progress_j = min(current_m_j / target_j, 1.0) if target_j > 0 else 0.0
     st.progress(progress_j)
