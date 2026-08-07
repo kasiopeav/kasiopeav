@@ -9,7 +9,7 @@ st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver4)", layo
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
-# 분기 배당 종목 정의 (3개월마다 지급되는 종목)
+# SCHD 등 분기 배당 종목 정의
 QUARTERLY_DIV_TICKERS = ["SCHD"]
 
 KR_TICKER_MAP = {
@@ -206,7 +206,7 @@ with macro_col4: render_macro_card("VIX 지수", f"{vix:.2f}", "", vix >= 40)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 공통 포트폴리오 랜더링 함수
+# 공통 포트폴리오 랜더링 함수 (엑셀 연산식과 100% 동기화)
 # ---------------------------------------------------------
 def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
@@ -248,7 +248,8 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
         else:
             current_p = float(current_p)
 
-        div_freq_factor = 3.0 if ticker_name in QUARTERLY_DIV_TICKERS else 1.0
+        # 엑셀 공식 연산 반영
+        annual_div_multiplier = 4.0 if ticker_name in QUARTERLY_DIV_TICKERS else 12.0
 
         if curr == "USD":
             avg_p_disp = f"${avg_p:,.2f}"
@@ -257,13 +258,18 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
             eval_val_krw = qty * current_p * usd_krw
             invest_cost_disp = f"₩{buy_val_krw:,.0f} [${qty * avg_p:,.2f}]"
             div_per_share_disp = f"₩{last_div * usd_krw:,.0f} [${last_div:.4f}]"
-            monthly_div_item_krw = qty * (last_div / div_freq_factor) * usd_krw * (1 - TAX_RATE)
+            
+            # 엑셀식 배당금 연산
+            annual_pre_tax_div_krw = qty * (last_div * annual_div_multiplier) * usd_krw
+            monthly_div_item_krw = (annual_pre_tax_div_krw / 12.0) * (1 - TAX_RATE)
         else:
             avg_p_disp = f"₩{avg_p:,.0f}"
             current_p_disp = f"₩{current_p:,.0f}"
             buy_val_krw, eval_val_krw = qty * avg_p, qty * current_p
             invest_cost_disp, div_per_share_disp = f"₩{buy_val_krw:,.0f}", f"₩{last_div:,.0f}"
-            monthly_div_item_krw = qty * (last_div / div_freq_factor) * (1 - TAX_RATE)
+            
+            annual_pre_tax_div_krw = qty * (last_div * annual_div_multiplier)
+            monthly_div_item_krw = (annual_pre_tax_div_krw / 12.0) * (1 - TAX_RATE)
 
         return_rate = ((eval_val_krw - buy_val_krw) / buy_val_krw) * 100 if buy_val_krw > 0 else 0.0
         return_rate_disp = f"🔴 +{return_rate:.2f}%" if return_rate > 0 else (f"🔵 {return_rate:.2f}%" if return_rate < 0 else "⚪ 0.00%")
@@ -310,7 +316,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
         st.success(f"[{owner_name}] 구글 시트에 성공적으로 저장되었습니다!")
         st.rerun()
 
-    # 종합 요약
+    # 종합 요약 (엑셀식 반영)
     st.subheader(f"💰 계좌 성과 및 배당금 종합 요약 ({owner_name})")
     account_return_rate = ((total_eval_krw - total_buy_krw) / total_buy_krw) * 100 if total_buy_krw > 0 else 0.0
     yearly_est_div_krw = monthly_est_div_krw * 12
@@ -330,7 +336,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     return total_buy_krw
 
 # ---------------------------------------------------------
-# 공통 미래 목표 랜더링 함수 (통합 배당금 열 & 월 배당금 연산)
+# 공통 미래 목표 랜더링 함수 (엑셀 연산식과 100% 동기화)
 # ---------------------------------------------------------
 def render_future_target_section(owner_name, target_key, current_total_buy, sheet_name, portfolio_key):
     st.subheader(f"🎯 미래 배당 세팅 목표 ({owner_name})")
@@ -365,26 +371,24 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         else:
             current_p = float(current_p)
 
-        div_freq_factor = 3.0 if ticker_name in QUARTERLY_DIV_TICKERS else 1.0
+        annual_div_multiplier = 4.0 if ticker_name in QUARTERLY_DIV_TICKERS else 12.0
 
         if curr == "USD":
             buy_val_krw = qty * current_p * usd_krw
-            annual_div_multiplier = 4.0 if ticker_name in QUARTERLY_DIV_TICKERS else 12.0
             pre_tax_div_annual_krw = qty * (last_div * annual_div_multiplier) * usd_krw
             post_tax_div_annual_krw = pre_tax_div_annual_krw * (1 - TAX_RATE)
             target_price_disp = f"₩{current_p * usd_krw:,.0f} [${current_p:,.2f}]"
             invest_cost_disp = f"₩{buy_val_krw:,.0f} [${qty * current_p:,.2f}]"
             div_per_share_disp = f"${last_div:.4f}"
-            monthly_div_item_krw = qty * (last_div / div_freq_factor) * usd_krw * (1 - TAX_RATE)
+            monthly_div_item_krw = post_tax_div_annual_krw / 12.0
         else:
             buy_val_krw = qty * current_p
-            annual_div_multiplier = 4.0 if ticker_name in QUARTERLY_DIV_TICKERS else 12.0
             pre_tax_div_annual_krw = qty * (last_div * annual_div_multiplier)
             post_tax_div_annual_krw = pre_tax_div_annual_krw * (1 - TAX_RATE)
             target_price_disp = f"₩{current_p:,.0f}"
             invest_cost_disp = f"₩{buy_val_krw:,.0f}"
             div_per_share_disp = f"₩{last_div:,.0f}"
-            monthly_div_item_krw = qty * (last_div / div_freq_factor) * (1 - TAX_RATE)
+            monthly_div_item_krw = post_tax_div_annual_krw / 12.0
 
         future_total_buy_krw += buy_val_krw
         future_yearly_pre_tax_div_krw += pre_tax_div_annual_krw
