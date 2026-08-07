@@ -168,8 +168,6 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
     for item in st.session_state[portfolio_key]:
         ticker_name = item.get("ticker", "")
-        
-        # 한국 주식 매핑 보완
         kr_info = KR_TICKER_MAP.get(ticker_name, {})
         symbol = item.get("ticker_symbol") or kr_info.get("symbol") or ticker_name
         
@@ -181,7 +179,6 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
         curr = item.get("currency", "USD")
 
-        # 배당금 0원 처리 방지
         try: last_div = float(item.get("last_div", 0) or 0)
         except Exception: last_div = 0.0
 
@@ -357,6 +354,8 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
     with f_col4: st.metric(label="📈 세후 예상 배당률 (%)", value=f"{future_div_yield:.2f}%")
     with f_col5: st.metric(label="🎯 목표 달성 추가 필요 시드", value=f"₩{needed_additional_seed:,.0f}", delta=f"목표시드: ₩{future_total_buy_krw:,.0f}")
 
+    return future_total_buy_krw, future_yearly_pre_tax_div_krw, future_yearly_post_tax_div_krw
+
 
 # ---------------------------------------------------------
 # 메인 세션 차례대로 배치 (스크롤)
@@ -365,7 +364,7 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
 # 1. 재국 보유 현황 & 미래 목표
 buy_jg = render_portfolio_section("재국", "portfolio_jg", "Portfolio")
 st.markdown("---")
-render_future_target_section("재국", "future_target_jg", buy_jg, "FutureTarget")
+fut_buy_jg, fut_pre_jg, fut_post_jg = render_future_target_section("재국", "future_target_jg", buy_jg, "FutureTarget")
 
 st.markdown("---")
 st.markdown("---")
@@ -373,7 +372,7 @@ st.markdown("---")
 # 2. 광희 보유 현황 & 미래 목표
 buy_gh = render_portfolio_section("광희", "portfolio_gh", "Portfolio_GH")
 st.markdown("---")
-render_future_target_section("광희", "future_target_gh", buy_gh, "FutureTarget_GH")
+fut_buy_gh, fut_pre_gh, fut_post_gh = render_future_target_section("광희", "future_target_gh", buy_gh, "FutureTarget_GH")
 
 st.markdown("---")
 
@@ -422,3 +421,23 @@ st.info(f"""
 * **월 예상 배당금 증가 (세후):** +**₩{add_monthly_div_krw:,.0f}**
 * **연 예상 배당금 증가 (세후):** +**₩{add_monthly_div_krw * 12:,.0f}**
 """)
+
+st.markdown("---")
+
+# ---------------------------------------------------------
+# 가장 아래: 재국 ♡ 광희 미래 총 배당금 종합 요약
+# ---------------------------------------------------------
+st.subheader("💖 재국 ♡ 광희 미래 총 배당금")
+
+total_fut_buy = fut_buy_jg + fut_buy_gh
+total_fut_pre_tax = fut_pre_jg + fut_pre_gh
+total_fut_post_tax = fut_post_jg + fut_post_gh
+total_fut_monthly_post_tax = total_fut_post_tax / 12
+total_fut_yield = (total_fut_post_tax / total_fut_buy * 100) if total_fut_buy > 0 else 0.0
+
+tot_col1, tot_col2, tot_col3, tot_col4, tot_col5 = st.columns(5)
+with tot_col1: st.metric(label="💵 목표 총 투자 금액", value=f"₩{total_fut_buy:,.0f}")
+with tot_col2: st.metric(label="💰 세전 총 예상 배당금 (연)", value=f"₩{total_fut_pre_tax:,.0f}")
+with tot_col3: st.metric(label="🎁 세후 총 예상 배당금 (연)", value=f"₩{total_fut_post_tax:,.0f}")
+with tot_col4: st.metric(label="📅 세후 총 월 예상 배당금", value=f"₩{total_fut_monthly_post_tax:,.0f}")
+with tot_col5: st.metric(label="📈 세후 총 예상 배당률 (%)", value=f"{total_fut_yield:.2f}%")
