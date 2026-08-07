@@ -113,6 +113,24 @@ st.markdown("""
     .macro-value { font-size: 24px; font-weight: 800; color: #1a202c; }
     .status-badge-ok { display: inline-block; background-color: #c6f6d5; color: #22543d; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 12px; }
     .status-badge-warn { display: inline-block; background-color: #fed7d7; color: #9b2c2c; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 12px; }
+    
+    /* 강조 미래 총 배당금 카드 박스 스타일 */
+    .total-highlight-card {
+        background: linear-gradient(135deg, #fff5f7 0%, #ffe6ec 100%);
+        border: 2px solid #f6ad55;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 8px 16px rgba(246, 173, 85, 0.15);
+        margin-bottom: 24px;
+    }
+    .total-title {
+        font-size: 20px;
+        font-weight: 900;
+        color: #9b2c2c;
+        margin-bottom: 16px;
+        text-align: center;
+    }
+    
     div[data-testid="stDataEditor"] div[role="columnheader"] { background-color: #e2e8f0 !important; color: #0f172a !important; font-weight: 800 !important; font-size: 15px !important; border-bottom: 2px solid #94a3b8 !important; }
     div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(2), div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(3) { background-color: #dbeafe !important; color: #1e40af !important; }
     </style>
@@ -375,9 +393,35 @@ st.markdown("---")
 fut_buy_gh, fut_pre_gh, fut_post_gh = render_future_target_section("광희", "future_target_gh", buy_gh, "FutureTarget_GH")
 
 st.markdown("---")
+st.markdown("---")
 
 # ---------------------------------------------------------
-# 추가 매수 시뮬레이터
+# 3. [강조 디자인] 재국 ♡ 광희 미래 총 배당금 종합 요약 (시뮬레이터 상단 위치)
+# ---------------------------------------------------------
+total_fut_buy = fut_buy_jg + fut_buy_gh
+total_fut_pre_tax = fut_pre_jg + fut_pre_gh
+total_fut_post_tax = fut_post_jg + fut_post_gh
+total_fut_monthly_post_tax = total_fut_post_tax / 12
+total_fut_yield = (total_fut_post_tax / total_fut_buy * 100) if total_fut_buy > 0 else 0.0
+
+st.markdown(f"""
+    <div class="total-highlight-card">
+        <div class="total-title">💖 재국 ♡ 광희 미래 총 배당금 종합 목표</div>
+    </div>
+""", unsafe_allow_html=True)
+
+tot_col1, tot_col2, tot_col3, tot_col4, tot_col5 = st.columns(5)
+with tot_col1: st.metric(label="💵 목표 총 투자 금액", value=f"₩{total_fut_buy:,.0f}")
+with tot_col2: st.metric(label="💰 세전 총 예상 배당금 (연)", value=f"₩{total_fut_pre_tax:,.0f}")
+with tot_col3: st.metric(label="🎁 세후 총 예상 배당금 (연)", value=f"₩{total_fut_post_tax:,.0f}")
+with tot_col4: st.metric(label="📅 세후 총 월 예상 배당금", value=f"₩{total_fut_monthly_post_tax:,.0f}")
+with tot_col5: st.metric(label="📈 세후 총 예상 배당률 (%)", value=f"{total_fut_yield:.2f}%")
+
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("---")
+
+# ---------------------------------------------------------
+# 4. 추가 매수 시뮬레이터
 # ---------------------------------------------------------
 st.subheader("🧮 추가 매수 시뮬레이터")
 all_items = st.session_state.portfolio_jg + st.session_state.portfolio_gh
@@ -421,23 +465,3 @@ st.info(f"""
 * **월 예상 배당금 증가 (세후):** +**₩{add_monthly_div_krw:,.0f}**
 * **연 예상 배당금 증가 (세후):** +**₩{add_monthly_div_krw * 12:,.0f}**
 """)
-
-st.markdown("---")
-
-# ---------------------------------------------------------
-# 가장 아래: 재국 ♡ 광희 미래 총 배당금 종합 요약
-# ---------------------------------------------------------
-st.subheader("💖 재국 ♡ 광희 미래 총 배당금")
-
-total_fut_buy = fut_buy_jg + fut_buy_gh
-total_fut_pre_tax = fut_pre_jg + fut_pre_gh
-total_fut_post_tax = fut_post_jg + fut_post_gh
-total_fut_monthly_post_tax = total_fut_post_tax / 12
-total_fut_yield = (total_fut_post_tax / total_fut_buy * 100) if total_fut_buy > 0 else 0.0
-
-tot_col1, tot_col2, tot_col3, tot_col4, tot_col5 = st.columns(5)
-with tot_col1: st.metric(label="💵 목표 총 투자 금액", value=f"₩{total_fut_buy:,.0f}")
-with tot_col2: st.metric(label="💰 세전 총 예상 배당금 (연)", value=f"₩{total_fut_pre_tax:,.0f}")
-with tot_col3: st.metric(label="🎁 세후 총 예상 배당금 (연)", value=f"₩{total_fut_post_tax:,.0f}")
-with tot_col4: st.metric(label="📅 세후 총 월 예상 배당금", value=f"₩{total_fut_monthly_post_tax:,.0f}")
-with tot_col5: st.metric(label="📈 세후 총 예상 배당률 (%)", value=f"{total_fut_yield:.2f}%")
