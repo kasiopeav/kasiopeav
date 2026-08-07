@@ -2,8 +2,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import requests
-import json
-import re
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -11,7 +9,7 @@ st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver3)", layo
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
-# 한국 종목명 -> 기본 1주당 배당금 및 네이버 시세 보완
+# 한국 종목명 -> 네이버 시세 코드 및 기본 1주당 배당금 보완 매핑
 KR_TICKER_MAP = {
     "KODEX 미국배당커버드콜 액티브": {"code": "441680", "default_div": 99.0},
     "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"code": "480410", "default_div": 149.0},
@@ -42,7 +40,6 @@ def get_gspread_client():
 
 gc = get_gspread_client()
 
-# 네이버 금융 실시간 시세 조회 (파싱 강화)
 def fetch_kr_stock_price(ticker_name):
     code = KR_TICKER_MAP.get(ticker_name, {}).get("code")
     if not code:
@@ -225,7 +222,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
         total_received_div_all_krw += tot_div
 
-        # 국내 주식 현재가 조회 (네이버 증권 시체 API)
+        # 국내 주식 현재가 네이버 연동
         current_p = fetch_kr_stock_price(ticker_name)
         if current_p is None:
             try:
@@ -233,7 +230,9 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
             except Exception:
                 current_p = avg_p
 
+        # 통화별 평단가 표기 및 수익률 정밀 연산
         if curr == "USD":
+            avg_p_disp = f"${avg_p:,.2f}"
             buy_val_krw = qty * avg_p * usd_krw
             eval_val_krw = qty * current_p * usd_krw
             current_price_disp = f"₩{current_p * usd_krw:,.0f} [${current_p:,.2f}]"
@@ -241,11 +240,13 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
             div_per_share_disp = f"₩{last_div * usd_krw:,.0f} [${last_div:.4f}]"
             monthly_div_item_krw = qty * last_div * usd_krw * (1 - TAX_RATE)
         else:
+            avg_p_disp = f"₩{avg_p:,.0f}"
             buy_val_krw, eval_val_krw = qty * avg_p, qty * current_p
             current_price_disp = f"₩{current_p:,.0f}"
             invest_cost_disp, div_per_share_disp = f"₩{buy_val_krw:,.0f}", f"₩{last_div:,.0f}"
             monthly_div_item_krw = qty * last_div * (1 - TAX_RATE)
 
+        # 수익률 연산
         return_rate = ((eval_val_krw - buy_val_krw) / buy_val_krw) * 100 if buy_val_krw > 0 else 0.0
         return_rate_disp = f"🔴 +{return_rate:.2f}%" if return_rate > 0 else (f"🔵 {return_rate:.2f}%" if return_rate < 0 else "⚪ 0.00%")
 
@@ -256,7 +257,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
         df_data.append({
             "티커": ticker_name,
             "수량(주) ✏️": qty,
-            "내 평단가 ✏️": avg_p,
+            "내 평단가 ✏️": avg_p_disp,
             "현재가 (한화/달러)": current_price_disp,
             "총 투자비용 (수량×평단가)": invest_cost_disp,
             "1주당 배당금 (한화/달러)": div_per_share_disp,
@@ -266,13 +267,11 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
     df_display = pd.DataFrame(df_data)
 
-    # 중복 내 평단가 열 완전 삭제 반영
     edited_df = st.data_editor(
         df_display,
         disabled=["티커", "현재가 (한화/달러)", "총 투자비용 (수량×평단가)", "1주당 배당금 (한화/달러)", "월 예상 배당금 (세후)", "현재 수익률"],
         column_config={
-            "수량(주) ✏️": st.column_config.NumberColumn(min_value=0, step=1, format="%d"),
-            "내 평단가 ✏️": st.column_config.NumberColumn(format="$%.2f")
+            "수량(주) ✏️": st.column_config.NumberColumn(min_value=0, step=1, format="%d")
         },
         use_container_width=True, hide_index=True, key=f"editor_current_{portfolio_key}"
     )
@@ -280,7 +279,12 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     if st.button(f"💾 현재 현황 구글 시트 저장 및 계산 반영 ({owner_name})", use_container_width=True, key=f"btn_save_curr_{portfolio_key}"):
         for idx, row in edited_df.iterrows():
             st.session_state[portfolio_key][idx]["qty"] = int(row["수량(주) ✏️"])
-            st.session_state[portfolio_key][idx]["avg_price"] = float(row["내 평단가 ✏️"])
+            # 숫자 추출 파싱
+            raw_avg = str(row["내 평단가 ✏️"]).replace("₩", "").replace("$", "").replace(",", "").strip()
+            try:
+                st.session_state[portfolio_key][idx]["avg_price"] = float(raw_avg)
+            except Exception:
+                pass
         
         save_sheet_data(sheet_name, st.session_state[portfolio_key])
         st.success(f"[{owner_name}] 구글 시트에 성공적으로 저장되었습니다!")
