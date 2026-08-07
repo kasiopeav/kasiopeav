@@ -6,7 +6,7 @@ import gspread
 from datetime import datetime
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver5)", layout="wide")
+st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver6)", layout="wide")
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
@@ -106,7 +106,7 @@ def load_sheet_data(worksheet_name, default_data):
             if default_data:
                 ws.update([list(default_data[0].keys())] + [list(x.values()) for x in default_data])
             else:
-                ws.update([["month", "ticker", "amount_krw"]])
+                ws.update([["month", "account_type", "ticker", "amount_krw"]])
         
         data = ws.get_all_records()
         if not data:
@@ -127,7 +127,7 @@ def save_sheet_data(worksheet_name, data):
             rows = [headers] + [[row[h] for h in headers] for row in data]
             ws.update(rows)
         else:
-            ws.update([["month", "ticker", "amount_krw"]])
+            ws.update([["month", "account_type", "ticker", "amount_krw"]])
         st.cache_data.clear()
     except Exception as e:
         st.error(f"구글 시트 저장 실패: {e}")
@@ -151,7 +151,7 @@ if "div_history_jg" not in st.session_state:
 if "div_history_gh" not in st.session_state:
     st.session_state.div_history_gh = load_sheet_data("Dividend_History_GH", DEFAULT_DIV_HISTORY_GH)
 
-# CSS 스타일 정의
+# CSS 스타일 정의 (가독성 시각 강화)
 st.markdown("""
     <style>
     .macro-card { background-color: #f8f9fa; border-radius: 12px; padding: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e9ecef; text-align: center; }
@@ -177,8 +177,17 @@ st.markdown("""
         text-align: center;
     }
     
-    div[data-testid="stDataEditor"] div[role="columnheader"] { background-color: #e2e8f0 !important; color: #0f172a !important; font-weight: 800 !important; font-size: 15px !important; border-bottom: 2px solid #94a3b8 !important; }
-    div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(2), div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(3), div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(4) { background-color: #dbeafe !important; color: #1e40af !important; }
+    div[data-testid="stDataEditor"] div[role="columnheader"] { 
+        background-color: #e2e8f0 !important; 
+        color: #0f172a !important; 
+        font-weight: 800 !important; 
+        font-size: 15px !important; 
+        border-bottom: 2px solid #94a3b8 !important; 
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 28px !important;
+        font-weight: 900 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -198,7 +207,7 @@ def get_macro_indicators():
 
 brent, us10y, usd_krw, vix = get_macro_indicators()
 
-st.title("💖 재국♡광희 맞춤형 주식 대시보드 (ver5)")
+st.title("💖 재국♡광희 맞춤형 주식 대시보드 (ver6)")
 st.write("")
 
 # 메인 탭 분리
@@ -487,11 +496,11 @@ with main_tab1:
 
 
 # ---------------------------------------------------------
-# TAB 2: 월별 배당금 입금 장부
+# TAB 2: 월별 배당금 입금 장부 (가독성 및 계좌 구분 강화)
 # ---------------------------------------------------------
 with main_tab2:
     st.subheader("📅 월별 배당금 입금 장부 (2026년~)")
-    st.caption("💡 2026년 1월부터 입금되는 월별 배당금을 등록하는 장부입니다. 수치 등록 시 대시보드의 '올해 받은 총 배당금'에 실시간 반영됩니다.")
+    st.caption("💡 2026년 1월부터 입금되는 월별 배당금을 계좌별로 등록하는 장부입니다.")
 
     owner_choice = st.radio("주주 선택", ["재국", "광희"], horizontal=True)
     history_key = "div_history_jg" if owner_choice == "재국" else "div_history_gh"
@@ -499,26 +508,32 @@ with main_tab2:
     portfolio_key = "portfolio_jg" if owner_choice == "재국" else "portfolio_gh"
 
     available_tickers = [item["ticker"] for item in st.session_state[portfolio_key]]
+    
+    # 계좌 구분 옵션
+    default_acc_options = [f"{owner_choice} 해외 직투 계좌", f"{owner_choice} ISA 계좌", f"{owner_choice} 연금저축 계좌", f"{owner_choice} 일반 계좌"]
 
     st.markdown("#### ➕ 신규 배당금 입금 등록")
     add_col1, add_col2, add_col3, add_col4 = st.columns([2, 3, 3, 2])
     with add_col1:
         input_month = st.text_input("입금 월 (YYYY-MM)", "2026-01")
     with add_col2:
-        input_ticker = st.selectbox("종목 선택", available_tickers)
+        input_account = st.selectbox("계좌 선택", default_acc_options)
     with add_col3:
-        input_amount = st.number_input("입금 배당금 (한화 ₩)", min_value=0, value=100000, step=10000)
+        input_ticker = st.selectbox("종목 선택", available_tickers)
     with add_col4:
-        st.write("<br>", unsafe_allow_html=True)
-        if st.button("➕ 입금 내역 추가", use_container_width=True):
-            st.session_state[history_key].append({
-                "month": input_month,
-                "ticker": input_ticker,
-                "amount_krw": input_amount
-            })
-            save_sheet_data(sheet_name, st.session_state[history_key])
-            st.success(f"[{input_month}] {input_ticker} 배당금 ₩{input_amount:,.0f}원이 등록되었습니다!")
-            st.rerun()
+        input_amount = st.number_input("입금 배당금 (한화 ₩)", min_value=0, value=100000, step=10000)
+
+    st.write("")
+    if st.button("➕ 배당금 입금 내역 추가 등록", use_container_width=True):
+        st.session_state[history_key].append({
+            "month": input_month,
+            "account_type": input_account,
+            "ticker": input_ticker,
+            "amount_krw": input_amount
+        })
+        save_sheet_data(sheet_name, st.session_state[history_key])
+        st.success(f"[{input_month}] [{input_account}] {input_ticker} 배당금 ₩{input_amount:,.0f}원이 등록되었습니다!")
+        st.rerun()
 
     st.markdown("---")
 
@@ -528,28 +543,32 @@ with main_tab2:
     history_data = st.session_state[history_key]
     if history_data:
         df_hist_raw = pd.DataFrame(history_data)
+        if "account_type" not in df_hist_raw.columns:
+            df_hist_raw["account_type"] = f"{owner_choice} 직투 계좌"
+
         df_hist_raw["amount_krw"] = pd.to_numeric(df_hist_raw["amount_krw"], errors="coerce").fillna(0)
 
         total_sum = df_hist_raw["amount_krw"].sum()
 
-        sum_col1, sum_col2 = st.columns([4, 6])
+        sum_col1, sum_col2 = st.columns([5, 5])
         with sum_col1:
-            st.metric(label=f"🏦 [{owner_choice}] 장부 계좌 총 누적 배당금", value=f"₩{total_sum:,.0f}")
+            st.metric(label=f"🏦 [{owner_choice}] 장부 총 누적 배당금 (세후)", value=f"₩{total_sum:,.0f}")
             
-            # 티커별 총 수령액 요약 표 (숫자 데이터로 정렬 문제 완벽 해결)
-            st.markdown("**📌 티커별 누적 수령 배당금**")
-            ticker_summary = df_hist_raw.groupby("ticker")["amount_krw"].sum().reset_index()
+            # 계좌별 & 티커별 요약 표
+            st.markdown("**📌 티커 및 계좌별 누적 수령 배당금**")
+            ticker_summary = df_hist_raw.groupby(["account_type", "ticker"])["amount_krw"].sum().reset_index()
             ticker_summary["비중 (%)"] = (ticker_summary["amount_krw"] / total_sum * 100).round(1)
-            
-            # 금액 내림차순 기본 정렬
             ticker_summary = ticker_summary.sort_values(by="amount_krw", ascending=False)
             
             st.dataframe(
                 ticker_summary.rename(columns={
+                    "account_type": "계좌 구분",
                     "ticker": "티커",
                     "amount_krw": "총 수령 금액 (₩)"
                 }),
                 column_config={
+                    "계좌 구분": st.column_config.TextColumn("계좌 구분", width="medium"),
+                    "티커": st.column_config.TextColumn("티커", width="medium"),
                     "총 수령 금액 (₩)": st.column_config.NumberColumn("총 수령 금액 (₩)", format="₩%d"),
                     "비중 (%)": st.column_config.NumberColumn("비중 (%)", format="%.1f%%")
                 },
@@ -568,11 +587,12 @@ with main_tab2:
         st.markdown(f"#### 📜 [{owner_choice}] 배당금 입금 상세 내역 장부")
 
         edited_hist = st.data_editor(
-            df_hist_raw[["month", "ticker", "amount_krw"]],
+            df_hist_raw[["month", "account_type", "ticker", "amount_krw"]],
             column_config={
-                "month": st.column_config.TextColumn("입금 월 (YYYY-MM)"),
-                "ticker": st.column_config.TextColumn("티커/종목명"),
-                "amount_krw": st.column_config.NumberColumn("입금 금액 (₩)", format="₩%d")
+                "month": st.column_config.TextColumn("입금 월 (YYYY-MM)", width="small"),
+                "account_type": st.column_config.TextColumn("계좌 구분", width="medium"),
+                "ticker": st.column_config.TextColumn("티커/종목명", width="medium"),
+                "amount_krw": st.column_config.NumberColumn("입금 금액 (₩)", format="₩%d", width="large")
             },
             num_rows="dynamic",
             use_container_width=True,
