@@ -9,7 +9,6 @@ st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver3)", layo
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
-# 한국 종목명 -> 종목코드 & 기본 1주당 배당금 보완 매핑
 KR_TICKER_MAP = {
     "KODEX 미국배당커버드콜 액티브": {"code": "441680", "default_div": 99.0},
     "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"code": "480410", "default_div": 149.0},
@@ -21,7 +20,7 @@ KR_TICKER_MAP = {
 }
 
 # ---------------------------------------------------------
-# 0. 구글 시트 연동 & 실시간 시세 조회 (yfinance + 네이버 JSON)
+# 0. 구글 시트 연동 & 실시간 시세 조회
 # ---------------------------------------------------------
 @st.cache_resource
 def get_gspread_client():
@@ -40,25 +39,11 @@ def get_gspread_client():
 
 gc = get_gspread_client()
 
-# 실시간 시세 조회 (통합 API)
 def fetch_realtime_price(ticker_name, ticker_symbol, currency):
-    # 1. 한국 주식인 경우
     if currency == "KRW" or ticker_name in KR_TICKER_MAP:
         code = KR_TICKER_MAP.get(ticker_name, {}).get("code")
         if not code and ticker_symbol:
             code = str(ticker_symbol).replace(".KS", "").replace(".KQ", "").strip()
-        
-        # 1-1. yfinance 시도 (.KS)
-        if code:
-            yf_sym = f"{code}.KS"
-            try:
-                p = float(yf.Ticker(yf_sym).fast_info['lastPrice'])
-                if p > 0:
-                    return p
-            except Exception:
-                pass
-
-        # 1-2. 네이버 증권 JSON API 시도
         if code:
             try:
                 url = f"https://polling.finance.naver.com/api/realtime/market/stock/price?stocks={code}"
@@ -72,7 +57,6 @@ def fetch_realtime_price(ticker_name, ticker_symbol, currency):
             except Exception:
                 pass
 
-    # 2. 미국 주식 및 일반 yfinance 조회
     if ticker_symbol:
         try:
             p = float(yf.Ticker(ticker_symbol).fast_info['lastPrice'])
@@ -84,21 +68,21 @@ def fetch_realtime_price(ticker_name, ticker_symbol, currency):
     return None
 
 DEFAULT_PORTFOLIO_JG = [
-    {"ticker": "JEPQ", "ticker_symbol": "JEPQ", "qty": 660, "avg_price": 53.71, "currency": "USD", "last_div": 0.56, "total_received_div": 3101187},
-    {"ticker": "QQQI", "ticker_symbol": "QQQI", "qty": 627, "avg_price": 53.07, "currency": "USD", "last_div": 0.6346, "total_received_div": 680792},
-    {"ticker": "SCHD", "ticker_symbol": "SCHD", "qty": 722, "avg_price": 27.12, "currency": "USD", "last_div": 0.25, "total_received_div": 253716},
-    {"ticker": "QLD",  "ticker_symbol": "QLD",  "qty": 23,  "avg_price": 84.29, "currency": "USD", "last_div": 0.03, "total_received_div": 0},
-    {"ticker": "KODEX 미국배당커버드콜 액티브", "ticker_symbol": "441680.KS", "qty": 194, "avg_price": 11288, "currency": "KRW", "last_div": 99, "total_received_div": 299148},
-    {"ticker": "KODEX 미국 AI테크 TOP10 타겟커버드콜", "ticker_symbol": "480410.KS", "qty": 149, "avg_price": 12259, "currency": "KRW", "last_div": 149, "total_received_div": 99234},
-    {"ticker": "KODEX 200타겟위클리커버드콜", "ticker_symbol": "480460.KS", "qty": 299, "avg_price": 15436, "currency": "KRW", "last_div": 262, "total_received_div": 1517126},
-    {"ticker": "KODEX 금융고배당TOP10타겟위클리커버트콜", "ticker_symbol": "489240.KS", "qty": 222, "avg_price": 12309, "currency": "KRW", "last_div": 162, "total_received_div": 164502},
-    {"ticker": "RISE 미국테크100데일리고정커버드콜", "ticker_symbol": "486250.KS", "qty": 83, "avg_price": 12259, "currency": "KRW", "last_div": 271, "total_received_div": 0},
-    {"ticker": "TIGER 미국나스닥 100 타겟 데일리 커버드콜", "ticker_symbol": "482730.KS", "qty": 53, "avg_price": 10420, "currency": "KRW", "last_div": 127, "total_received_div": 27295},
-    {"ticker": "KODEX 미국S&P500 데일리 커버드콜 OTM", "ticker_symbol": "482720.KS", "qty": 26, "avg_price": 9744, "currency": "KRW", "last_div": 119, "total_received_div": 0}
+    {"ticker": "JEPQ", "ticker_symbol": "JEPQ", "qty": 660, "avg_price": 53.71, "current_price": 59.34, "currency": "USD", "last_div": 0.56, "total_received_div": 3101187},
+    {"ticker": "QQQI", "ticker_symbol": "QQQI", "qty": 627, "avg_price": 53.07, "current_price": 54.75, "currency": "USD", "last_div": 0.6346, "total_received_div": 680792},
+    {"ticker": "SCHD", "ticker_symbol": "SCHD", "qty": 722, "avg_price": 27.12, "current_price": 33.70, "currency": "USD", "last_div": 0.25, "total_received_div": 253716},
+    {"ticker": "QLD",  "ticker_symbol": "QLD",  "qty": 23,  "avg_price": 84.29, "current_price": 90.13, "currency": "USD", "last_div": 0.03, "total_received_div": 0},
+    {"ticker": "KODEX 미국배당커버드콜 액티브", "ticker_symbol": "441680.KS", "qty": 194, "avg_price": 11288, "current_price": 10940, "currency": "KRW", "last_div": 99, "total_received_div": 299148},
+    {"ticker": "KODEX 미국 AI테크 TOP10 타겟커버드콜", "ticker_symbol": "480410.KS", "qty": 149, "avg_price": 12259, "current_price": 12224, "currency": "KRW", "last_div": 149, "total_received_div": 99234},
+    {"ticker": "KODEX 200타겟위클리커버드콜", "ticker_symbol": "480460.KS", "qty": 299, "avg_price": 15436, "current_price": 15436, "currency": "KRW", "last_div": 262, "total_received_div": 1517126},
+    {"ticker": "KODEX 금융고배당TOP10타겟위클리커버트콜", "ticker_symbol": "489240.KS", "qty": 222, "avg_price": 12309, "current_price": 12309, "currency": "KRW", "last_div": 162, "total_received_div": 164502},
+    {"ticker": "RISE 미국테크100데일리고정커버드콜", "ticker_symbol": "486250.KS", "qty": 83, "avg_price": 12259, "current_price": 12259, "currency": "KRW", "last_div": 271, "total_received_div": 0},
+    {"ticker": "TIGER 미국나스닥 100 타겟 데일리 커버드콜", "ticker_symbol": "482730.KS", "qty": 53, "avg_price": 10420, "current_price": 10420, "currency": "KRW", "last_div": 127, "total_received_div": 27295},
+    {"ticker": "KODEX 미국S&P500 데일리 커버드콜 OTM", "ticker_symbol": "482720.KS", "qty": 26, "avg_price": 9744, "current_price": 9744, "currency": "KRW", "last_div": 119, "total_received_div": 0}
 ]
 
 DEFAULT_PORTFOLIO_GH = [
-    {"ticker": "QQQI", "ticker_symbol": "QQQI", "qty": 240, "avg_price": 53.11, "currency": "USD", "last_div": 0.6346, "total_received_div": 339613}
+    {"ticker": "QQQI", "ticker_symbol": "QQQI", "qty": 240, "avg_price": 53.11, "current_price": 54.75, "currency": "USD", "last_div": 0.6346, "total_received_div": 339613}
 ]
 
 def load_sheet_data(worksheet_name, default_data):
@@ -174,7 +158,7 @@ st.markdown("""
     }
     
     div[data-testid="stDataEditor"] div[role="columnheader"] { background-color: #e2e8f0 !important; color: #0f172a !important; font-weight: 800 !important; font-size: 15px !important; border-bottom: 2px solid #94a3b8 !important; }
-    div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(2) { background-color: #dbeafe !important; color: #1e40af !important; }
+    div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(2), div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(3), div[data-testid="stDataEditor"] div[role="columnheader"]:nth-child(4) { background-color: #dbeafe !important; color: #1e40af !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -217,11 +201,11 @@ with macro_col4: render_macro_card("VIX 지수", f"{vix:.2f}", "", vix >= 40)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 공통 포트폴리오 랜더링 함수
+# 공통 포트폴리오 랜더링 함수 (현재가 수동 수정 가능)
 # ---------------------------------------------------------
 def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
-    st.caption("💡 푸른색 배경의 **수량(주) ✏️**, **내 평단가 ✏️** 셀을 수정한 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
+    st.caption("💡 푸른색 배경의 **수량(주) ✏️**, **내 평단가 ✏️**, **현재가 ✏️** 셀을 수정한 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
 
     df_data = []
     total_eval_krw, total_buy_krw, total_received_div_all_krw, monthly_est_div_krw = 0.0, 0.0, 0.0, 0.0
@@ -248,28 +232,31 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
         total_received_div_all_krw += tot_div
 
-        # 실시간 현재가 불러오기 (이중 보완)
-        current_p = fetch_realtime_price(ticker_name, symbol, curr)
-        if current_p is None or current_p == 0:
-            current_p = avg_p  # 최후의 보루
+        # 저장된 수동 현재가 또는 실시간 조회
+        current_p = item.get("current_price")
+        if current_p is None or float(current_p or 0) == 0:
+            current_p = fetch_realtime_price(ticker_name, symbol, curr)
+            if current_p is None or current_p == 0:
+                current_p = avg_p
+        else:
+            current_p = float(current_p)
 
-        # 통화별 데이터 가공
+        # 통화별 표기
         if curr == "USD":
             avg_p_disp = f"${avg_p:,.2f}"
+            current_p_disp = f"${current_p:,.2f}"
             buy_val_krw = qty * avg_p * usd_krw
             eval_val_krw = qty * current_p * usd_krw
-            current_price_disp = f"₩{current_p * usd_krw:,.0f} [${current_p:,.2f}]"
             invest_cost_disp = f"₩{buy_val_krw:,.0f} [${qty * avg_p:,.2f}]"
             div_per_share_disp = f"₩{last_div * usd_krw:,.0f} [${last_div:.4f}]"
             monthly_div_item_krw = qty * last_div * usd_krw * (1 - TAX_RATE)
         else:
             avg_p_disp = f"₩{avg_p:,.0f}"
+            current_p_disp = f"₩{current_p:,.0f}"
             buy_val_krw, eval_val_krw = qty * avg_p, qty * current_p
-            current_price_disp = f"₩{current_p:,.0f}"
             invest_cost_disp, div_per_share_disp = f"₩{buy_val_krw:,.0f}", f"₩{last_div:,.0f}"
             monthly_div_item_krw = qty * last_div * (1 - TAX_RATE)
 
-        # 수익률 계산
         return_rate = ((eval_val_krw - buy_val_krw) / buy_val_krw) * 100 if buy_val_krw > 0 else 0.0
         return_rate_disp = f"🔴 +{return_rate:.2f}%" if return_rate > 0 else (f"🔵 {return_rate:.2f}%" if return_rate < 0 else "⚪ 0.00%")
 
@@ -281,7 +268,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
             "티커": ticker_name,
             "수량(주) ✏️": qty,
             "내 평단가 ✏️": avg_p_disp,
-            "현재가 (한화/달러)": current_price_disp,
+            "현재가 ✏️": current_p_disp,
             "총 투자비용 (수량×평단가)": invest_cost_disp,
             "1주당 배당금 (한화/달러)": div_per_share_disp,
             "월 예상 배당금 (세후)": f"₩{monthly_div_item_krw:,.0f}",
@@ -292,7 +279,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
     edited_df = st.data_editor(
         df_display,
-        disabled=["티커", "현재가 (한화/달러)", "총 투자비용 (수량×평단가)", "1주당 배당금 (한화/달러)", "월 예상 배당금 (세후)", "현재 수익률"],
+        disabled=["티커", "총 투자비용 (수량×평단가)", "1주당 배당금 (한화/달러)", "월 예상 배당금 (세후)", "현재 수익률"],
         column_config={
             "수량(주) ✏️": st.column_config.NumberColumn(min_value=0, step=1, format="%d")
         },
@@ -302,12 +289,17 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     if st.button(f"💾 현재 현황 구글 시트 저장 및 계산 반영 ({owner_name})", use_container_width=True, key=f"btn_save_curr_{portfolio_key}"):
         for idx, row in edited_df.iterrows():
             st.session_state[portfolio_key][idx]["qty"] = int(row["수량(주) ✏️"])
+            
+            # 내 평단가 파싱
             raw_avg = str(row["내 평단가 ✏️"]).replace("₩", "").replace("$", "").replace(",", "").strip()
-            try:
-                st.session_state[portfolio_key][idx]["avg_price"] = float(raw_avg)
-            except Exception:
-                pass
-        
+            try: st.session_state[portfolio_key][idx]["avg_price"] = float(raw_avg)
+            except Exception: pass
+
+            # 현재가 파싱 (수동 입력 저장)
+            raw_curr = str(row["현재가 ✏️"]).replace("₩", "").replace("$", "").replace(",", "").strip()
+            try: st.session_state[portfolio_key][idx]["current_price"] = float(raw_curr)
+            except Exception: pass
+
         save_sheet_data(sheet_name, st.session_state[portfolio_key])
         st.success(f"[{owner_name}] 구글 시트에 성공적으로 저장되었습니다!")
         st.rerun()
@@ -353,10 +345,14 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
             last_div = KR_TICKER_MAP[ticker_name]["default_div"]
 
-        current_p = fetch_realtime_price(ticker_name, symbol, curr)
-        if current_p is None or current_p == 0:
-            try: current_p = float(item.get("avg_price", 0) or 0)
-            except Exception: current_p = 0.0
+        current_p = item.get("current_price")
+        if current_p is None or float(current_p or 0) == 0:
+            current_p = fetch_realtime_price(ticker_name, symbol, curr)
+            if current_p is None or current_p == 0:
+                try: current_p = float(item.get("avg_price", 0) or 0)
+                except Exception: current_p = 0.0
+        else:
+            current_p = float(current_p)
 
         if curr == "USD":
             buy_val_krw = qty * current_p * usd_krw
