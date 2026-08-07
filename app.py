@@ -21,15 +21,6 @@ st.markdown("""
         text-align: center;
         box-shadow: 0 2px 4px rgba(0,0,0,0.02);
     }
-    .status-badge {
-        font-size: 11px;
-        padding: 2px 8px;
-        border-radius: 10px;
-        font-weight: bold;
-    }
-    .badge-normal { background-color: #d1fae5; color: #065f46; }
-    .badge-warn { background-color: #fef3c7; color: #92400e; }
-    .badge-danger { background-color: #fee2e2; color: #991b1b; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -65,7 +56,7 @@ def save_sheet_data(worksheet, df):
     try:
         worksheet.clear()
         worksheet.update([df.columns.values.tolist()] + df.values.tolist())
-        # 저장 직후 캐시를 초기화하여 PC/모바일 즉시 반영
+        # 저장 직후 캐시를 비워 모바일/PC 즉시 반영
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -74,7 +65,6 @@ def save_sheet_data(worksheet, df):
 
 @st.cache_data(ttl=300)
 def fetch_market_data():
-    # 주요 지수 및 환율 데이터 로드
     tickers = ["CL=F", "^TNX", "KRW=X", "^VIX"]
     data = yf.download(tickers, period="5d", interval="1d", progress=False)['Close']
     
@@ -109,63 +99,63 @@ with c4:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# 4. 4개 탭 구성 (현재/미래 × 재국/광희)
+# 4. 세션 1: 실시간 통합 보유 현황 (재국)
 # -----------------------------------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 실시간 현황 (재국)", 
-    "📊 실시간 현황 (광희)", 
-    "🎯 미래 배당 목표 (재국)", 
-    "🎯 미래 배당 목표 (광희)"
-])
+st.subheader("📊 실시간 통합 보유 현황 (재국)")
+st.caption("💡 푸른색 배경의 수량(주), 내 평단가 셀을 수정한 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
 
-# ----- [탭 1] 실시간 현황 (재국) -----
-with tab1:
-    st.subheader("📊 실시간 통합 보유 현황 (재국)")
-    st.caption("💡 푸른색 배경의 수량(주), 내 평단가 셀을 수정한 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
-    
-    df1, ws1 = load_sheet_data("현재(재국)")
-    if not df1.empty:
-        edited_df1 = st.data_editor(df1, key="editor1", num_rows="dynamic", use_container_width=True)
-        if st.button("💾 현재 현황 구글 시트 저장 및 계산 반영 (재국)", key="btn1"):
-            if save_sheet_data(ws1, edited_df1):
-                st.success("구글 시트 [현재(재국)]에 성공적으로 저장되었습니다!")
-                st.rerun()
+df1, ws1 = load_sheet_data("현재(재국)")
+if not df1.empty:
+    edited_df1 = st.data_editor(df1, key="editor1", num_rows="dynamic", use_container_width=True)
+    if st.button("💾 현재 현황 구글 시트 저장 및 계산 반영 (재국)", key="btn1"):
+        if save_sheet_data(ws1, edited_df1):
+            st.success("구글 시트 [현재(재국)]에 성공적으로 저장되었습니다!")
+            st.rerun()
 
-# ----- [탭 2] 실시간 현황 (광희) -----
-with tab2:
-    st.subheader("📊 실시간 통합 보유 현황 (광희)")
-    st.caption("💡 푸른색 배경의 수량(주), 내 평단가 셀을 수정한 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
-    
-    df2, ws2 = load_sheet_data("현재(광희)")
-    if not df2.empty:
-        edited_df2 = st.data_editor(df2, key="editor2", num_rows="dynamic", use_container_width=True)
-        if st.button("💾 현재 현황 구글 시트 저장 및 계산 반영 (광희)", key="btn2"):
-            if save_sheet_data(ws2, edited_df2):
-                st.success("구글 시트 [현재(광희)]에 성공적으로 저장되었습니다!")
-                st.rerun()
+st.divider()
 
-# ----- [탭 3] 미래 배당 목표 (재국) -----
-with tab3:
-    st.subheader("🎯 미래 배당 세팅 목표 (재국)")
-    st.caption("💡 목표 수량을 수정 후 저장 버튼을 누르면 미래 연간/월간 예상 배당금이 자동 연산됩니다.")
-    
-    df3, ws3 = load_sheet_data("미래(재국)")
-    if not df3.empty:
-        edited_df3 = st.data_editor(df3, key="editor3", num_rows="dynamic", use_container_width=True)
-        if st.button("💾 미래 목표 저장 및 즉시 연산 (재국)", key="btn3"):
-            if save_sheet_data(ws3, edited_df3):
-                st.success("구글 시트 [미래(재국)]에 성공적으로 저장되었습니다!")
-                st.rerun()
+# -----------------------------------------------------------------------------
+# 5. 세션 2: 실시간 통합 보유 현황 (광희)
+# -----------------------------------------------------------------------------
+st.subheader("📊 실시간 통합 보유 현황 (광희)")
+st.caption("💡 푸른색 배경의 수량(주), 내 평단가 셀을 수정한 후 저장 버튼을 누르시면 구글 시트에 자동 보관됩니다.")
 
-# ----- [탭 4] 미래 배당 목표 (광희) -----
-with tab4:
-    st.subheader("🎯 미래 배당 세팅 목표 (광희)")
-    st.caption("💡 목표 수량을 수정 후 저장 버튼을 누르면 미래 연간/월간 예상 배당금이 자동 연산됩니다.")
-    
-    df4, ws4 = load_sheet_data("미래(광희)")
-    if not df4.empty:
-        edited_df4 = st.data_editor(df4, key="editor4", num_rows="dynamic", use_container_width=True)
-        if st.button("💾 미래 목표 저장 및 즉시 연산 (광희)", key="btn4"):
-            if save_sheet_data(ws4, edited_df4):
-                st.success("구글 시트 [미래(광희)]에 성공적으로 저장되었습니다!")
-                st.rerun()
+df2, ws2 = load_sheet_data("현재(광희)")
+if not df2.empty:
+    edited_df2 = st.data_editor(df2, key="editor2", num_rows="dynamic", use_container_width=True)
+    if st.button("💾 현재 현황 구글 시트 저장 및 계산 반영 (광희)", key="btn2"):
+        if save_sheet_data(ws2, edited_df2):
+            st.success("구글 시트 [현재(광희)]에 성공적으로 저장되었습니다!")
+            st.rerun()
+
+st.divider()
+
+# -----------------------------------------------------------------------------
+# 6. 세션 3: 미래 배당 세팅 목표 (재국)
+# -----------------------------------------------------------------------------
+st.subheader("🎯 미래 배당 세팅 목표 (재국)")
+st.caption("💡 목표 수량을 수정 후 저장 버튼을 누르면 미래 연간/월간 예상 배당금이 자동 연산됩니다.")
+
+df3, ws3 = load_sheet_data("미래(재국)")
+if not df3.empty:
+    edited_df3 = st.data_editor(df3, key="editor3", num_rows="dynamic", use_container_width=True)
+    if st.button("💾 미래 목표 저장 및 즉시 연산 (재국)", key="btn3"):
+        if save_sheet_data(ws3, edited_df3):
+            st.success("구글 시트 [미래(재국)]에 성공적으로 저장되었습니다!")
+            st.rerun()
+
+st.divider()
+
+# -----------------------------------------------------------------------------
+# 7. 세션 4: 미래 배당 세팅 목표 (광희)
+# -----------------------------------------------------------------------------
+st.subheader("🎯 미래 배당 세팅 목표 (광희)")
+st.caption("💡 목표 수량을 수정 후 저장 버튼을 누르면 미래 연간/월간 예상 배당금이 자동 연산됩니다.")
+
+df4, ws4 = load_sheet_data("미래(광희)")
+if not df4.empty:
+    edited_df4 = st.data_editor(df4, key="editor4", num_rows="dynamic", use_container_width=True)
+    if st.button("💾 미래 목표 저장 및 즉시 연산 (광희)", key="btn4"):
+        if save_sheet_data(ws4, edited_df4):
+            st.success("구글 시트 [미래(광희)]에 성공적으로 저장되었습니다!")
+            st.rerun()
