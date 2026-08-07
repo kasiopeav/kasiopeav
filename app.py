@@ -5,18 +5,18 @@ import requests
 import gspread
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver3)", layout="wide")
+st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver4)", layout="wide")
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
 KR_TICKER_MAP = {
-    "KODEX 미국배당커버드콜 액티브": {"code": "441680", "default_div": 99.0},
-    "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"code": "480410", "default_div": 149.0},
-    "KODEX 200타겟위클리커버드콜": {"code": "480460", "default_div": 252.0},
-    "KODEX 금융고배당TOP10타겟위클리커버트콜": {"code": "489240", "default_div": 162.0},
-    "RISE 미국테크100데일리고정커버드콜": {"code": "486250", "default_div": 271.0},
-    "TIGER 미국나스닥 100 타겟 데일리 커버드콜": {"code": "482730", "default_div": 127.0},
-    "KODEX 미국S&P500 데일리 커버드콜 OTM": {"code": "482720", "default_div": 119.0}
+    "KODEX 미국배당커버드콜 액티브": {"code": "441680", "default_div": 99.0, "default_price": 13110.0},
+    "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"code": "480410", "default_div": 149.0, "default_price": 12335.0},
+    "KODEX 200타겟위클리커버드콜": {"code": "480460", "default_div": 252.0, "default_price": 18920.0},
+    "KODEX 금융고배당TOP10타겟위클리커버트콜": {"code": "489240", "default_div": 162.0, "default_price": 12035.0},
+    "RISE 미국테크100데일리고정커버드콜": {"code": "486250", "default_div": 271.0, "default_price": 10980.0},
+    "TIGER 미국나스닥 100 타겟 데일리 커버드콜": {"code": "482730", "default_div": 127.0, "default_price": 10905.0},
+    "KODEX 미국S&P500 데일리 커버드콜 OTM": {"code": "482720", "default_div": 119.0, "default_price": 9795.0}
 }
 
 # ---------------------------------------------------------
@@ -56,6 +56,8 @@ def fetch_realtime_price(ticker_name, ticker_symbol, currency):
                         return float(price)
             except Exception:
                 pass
+        if ticker_name in KR_TICKER_MAP:
+            return KR_TICKER_MAP[ticker_name]["default_price"]
 
     if ticker_symbol:
         try:
@@ -72,13 +74,13 @@ DEFAULT_PORTFOLIO_JG = [
     {"ticker": "QQQI", "ticker_symbol": "QQQI", "qty": 627, "avg_price": 53.07, "current_price": 54.75, "currency": "USD", "last_div": 0.6346, "total_received_div": 680792},
     {"ticker": "SCHD", "ticker_symbol": "SCHD", "qty": 722, "avg_price": 27.12, "current_price": 33.70, "currency": "USD", "last_div": 0.25, "total_received_div": 253716},
     {"ticker": "QLD",  "ticker_symbol": "QLD",  "qty": 23,  "avg_price": 84.29, "current_price": 90.13, "currency": "USD", "last_div": 0.03, "total_received_div": 0},
-    {"ticker": "KODEX 미국배당커버드콜 액티브", "ticker_symbol": "441680.KS", "qty": 194, "avg_price": 11288, "current_price": 10940, "currency": "KRW", "last_div": 99, "total_received_div": 299148},
-    {"ticker": "KODEX 미국 AI테크 TOP10 타겟커버드콜", "ticker_symbol": "480410.KS", "qty": 149, "avg_price": 12259, "current_price": 12224, "currency": "KRW", "last_div": 149, "total_received_div": 99234},
-    {"ticker": "KODEX 200타겟위클리커버드콜", "ticker_symbol": "480460.KS", "qty": 299, "avg_price": 15436, "current_price": 15436, "currency": "KRW", "last_div": 262, "total_received_div": 1517126},
-    {"ticker": "KODEX 금융고배당TOP10타겟위클리커버트콜", "ticker_symbol": "489240.KS", "qty": 222, "avg_price": 12309, "current_price": 12309, "currency": "KRW", "last_div": 162, "total_received_div": 164502},
-    {"ticker": "RISE 미국테크100데일리고정커버드콜", "ticker_symbol": "486250.KS", "qty": 83, "avg_price": 12259, "current_price": 12259, "currency": "KRW", "last_div": 271, "total_received_div": 0},
-    {"ticker": "TIGER 미국나스닥 100 타겟 데일리 커버드콜", "ticker_symbol": "482730.KS", "qty": 53, "avg_price": 10420, "current_price": 10420, "currency": "KRW", "last_div": 127, "total_received_div": 27295},
-    {"ticker": "KODEX 미국S&P500 데일리 커버드콜 OTM", "ticker_symbol": "482720.KS", "qty": 26, "avg_price": 9744, "current_price": 9744, "currency": "KRW", "last_div": 119, "total_received_div": 0}
+    {"ticker": "KODEX 미국배당커버드콜 액티브", "ticker_symbol": "441680.KS", "qty": 194, "avg_price": 11288, "current_price": 13110, "currency": "KRW", "last_div": 99, "total_received_div": 299148},
+    {"ticker": "KODEX 미국 AI테크 TOP10 타겟커버드콜", "ticker_symbol": "480410.KS", "qty": 149, "avg_price": 12224, "current_price": 12335, "currency": "KRW", "last_div": 149, "total_received_div": 99234},
+    {"ticker": "KODEX 200타겟위클리커버드콜", "ticker_symbol": "480460.KS", "qty": 344, "avg_price": 16687, "current_price": 18920, "currency": "KRW", "last_div": 262, "total_received_div": 1517126},
+    {"ticker": "KODEX 금융고배당TOP10타겟위클리커버트콜", "ticker_symbol": "489240.KS", "qty": 215, "avg_price": 12272, "current_price": 12035, "currency": "KRW", "last_div": 162, "total_received_div": 164502},
+    {"ticker": "RISE 미국테크100데일리고정커버드콜", "ticker_symbol": "486250.KS", "qty": 250, "avg_price": 10919, "current_price": 10980, "currency": "KRW", "last_div": 271, "total_received_div": 0},
+    {"ticker": "TIGER 미국나스닥 100 타겟 데일리 커버드콜", "ticker_symbol": "482730.KS", "qty": 53, "avg_price": 10443, "current_price": 10905, "currency": "KRW", "last_div": 127, "total_received_div": 27295},
+    {"ticker": "KODEX 미국S&P500 데일리 커버드콜 OTM", "ticker_symbol": "482720.KS", "qty": 26, "avg_price": 9744, "current_price": 9795, "currency": "KRW", "last_div": 119, "total_received_div": 0}
 ]
 
 DEFAULT_PORTFOLIO_GH = [
@@ -178,7 +180,7 @@ def get_macro_indicators():
 
 brent, us10y, usd_krw, vix = get_macro_indicators()
 
-st.title("💖 재국♡광희 맞춤형 주식 대시보드 (ver3)")
+st.title("💖 재국♡광희 맞춤형 주식 대시보드 (ver4)")
 st.write("")
 
 def render_macro_card(title, value, unit, is_warn):
@@ -201,7 +203,7 @@ with macro_col4: render_macro_card("VIX 지수", f"{vix:.2f}", "", vix >= 40)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 공통 포트폴리오 랜더링 함수 (현재가 수동 수정 가능)
+# 공통 포트폴리오 랜더링 함수
 # ---------------------------------------------------------
 def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
@@ -232,16 +234,18 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
         total_received_div_all_krw += tot_div
 
-        # 저장된 수동 현재가 또는 실시간 조회
+        # 저장된 현재가 또는 매핑된 기본값/조회값 사용
         current_p = item.get("current_price")
         if current_p is None or float(current_p or 0) == 0:
-            current_p = fetch_realtime_price(ticker_name, symbol, curr)
-            if current_p is None or current_p == 0:
-                current_p = avg_p
+            if ticker_name in KR_TICKER_MAP:
+                current_p = KR_TICKER_MAP[ticker_name]["default_price"]
+            else:
+                current_p = fetch_realtime_price(ticker_name, symbol, curr)
+                if current_p is None or current_p == 0:
+                    current_p = avg_p
         else:
             current_p = float(current_p)
 
-        # 통화별 표기
         if curr == "USD":
             avg_p_disp = f"${avg_p:,.2f}"
             current_p_disp = f"${current_p:,.2f}"
@@ -290,12 +294,10 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
         for idx, row in edited_df.iterrows():
             st.session_state[portfolio_key][idx]["qty"] = int(row["수량(주) ✏️"])
             
-            # 내 평단가 파싱
             raw_avg = str(row["내 평단가 ✏️"]).replace("₩", "").replace("$", "").replace(",", "").strip()
             try: st.session_state[portfolio_key][idx]["avg_price"] = float(raw_avg)
             except Exception: pass
 
-            # 현재가 파싱 (수동 입력 저장)
             raw_curr = str(row["현재가 ✏️"]).replace("₩", "").replace("$", "").replace(",", "").strip()
             try: st.session_state[portfolio_key][idx]["current_price"] = float(raw_curr)
             except Exception: pass
@@ -324,12 +326,15 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     return total_buy_krw
 
 # ---------------------------------------------------------
-# 공통 미래 목표 랜더링 함수
+# 공통 미래 목표 랜더링 함수 (동일한 현재가 연동)
 # ---------------------------------------------------------
-def render_future_target_section(owner_name, target_key, current_total_buy, sheet_name):
+def render_future_target_section(owner_name, target_key, current_total_buy, sheet_name, portfolio_key):
     st.subheader(f"🎯 미래 배당 세팅 목표 ({owner_name})")
     future_df_data = []
     future_total_buy_krw, future_yearly_pre_tax_div_krw, future_yearly_post_tax_div_krw = 0.0, 0.0, 0.0
+
+    # 보유 현황의 현재가를 빠른 매핑
+    curr_price_map = {item["ticker"]: item.get("current_price") for item in st.session_state[portfolio_key]}
 
     for item in st.session_state[target_key]:
         ticker_name = item.get("ticker", "")
@@ -345,12 +350,16 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
             last_div = KR_TICKER_MAP[ticker_name]["default_div"]
 
-        current_p = item.get("current_price")
+        # 보유 현황에 지정된 동일한 현재가 사용
+        current_p = curr_price_map.get(ticker_name) or item.get("current_price")
         if current_p is None or float(current_p or 0) == 0:
-            current_p = fetch_realtime_price(ticker_name, symbol, curr)
-            if current_p is None or current_p == 0:
-                try: current_p = float(item.get("avg_price", 0) or 0)
-                except Exception: current_p = 0.0
+            if ticker_name in KR_TICKER_MAP:
+                current_p = KR_TICKER_MAP[ticker_name]["default_price"]
+            else:
+                current_p = fetch_realtime_price(ticker_name, symbol, curr)
+                if current_p is None or current_p == 0:
+                    try: current_p = float(item.get("avg_price", 0) or 0)
+                    except Exception: current_p = 0.0
         else:
             current_p = float(current_p)
 
@@ -421,7 +430,7 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
 # 1. 재국 보유 현황 & 미래 목표
 buy_jg = render_portfolio_section("재국", "portfolio_jg", "Portfolio")
 st.markdown("---")
-fut_buy_jg, fut_pre_jg, fut_post_jg = render_future_target_section("재국", "future_target_jg", buy_jg, "FutureTarget")
+fut_buy_jg, fut_pre_jg, fut_post_jg = render_future_target_section("재국", "future_target_jg", buy_jg, "FutureTarget", "portfolio_jg")
 
 st.markdown("---")
 st.markdown("---")
@@ -429,7 +438,7 @@ st.markdown("---")
 # 2. 광희 보유 현황 & 미래 목표
 buy_gh = render_portfolio_section("광희", "portfolio_gh", "Portfolio_GH")
 st.markdown("---")
-fut_buy_gh, fut_pre_gh, fut_post_gh = render_future_target_section("광희", "future_target_gh", buy_gh, "FutureTarget_GH")
+fut_buy_gh, fut_pre_gh, fut_post_gh = render_future_target_section("광희", "future_target_gh", buy_gh, "FutureTarget_GH", "portfolio_gh")
 
 st.markdown("---")
 st.markdown("---")
