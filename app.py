@@ -9,7 +9,7 @@ st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver3)", layo
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
-# 한국 종목명 -> 네이버 시세 코드 및 기본 1주당 배당금 보완 매핑
+# 한국 종목명 -> 종목코드 & 기본 1주당 배당금 보완 매핑
 KR_TICKER_MAP = {
     "KODEX 미국배당커버드콜 액티브": {"code": "441680", "default_div": 99.0},
     "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"code": "480410", "default_div": 149.0},
@@ -21,7 +21,7 @@ KR_TICKER_MAP = {
 }
 
 # ---------------------------------------------------------
-# 0. 구글 시트 연동 & 네이버 증권 실시간 시세 조회
+# 0. 구글 시트 연동 & 실시간 시세 조회 (yfinance + 네이버 JSON)
 # ---------------------------------------------------------
 @st.cache_resource
 def get_gspread_client():
@@ -40,21 +40,47 @@ def get_gspread_client():
 
 gc = get_gspread_client()
 
-def fetch_kr_stock_price(ticker_name):
-    code = KR_TICKER_MAP.get(ticker_name, {}).get("code")
-    if not code:
-        return None
-    try:
-        url = f"https://finance.naver.com/item/sise_day.naver?code={code}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=3)
-        tables = pd.read_html(res.text)
-        if tables and not tables[0].empty:
-            df_day = tables[0].dropna(how="all")
-            latest_price = str(df_day.iloc[0]["종가"]).replace(",", "").strip()
-            return float(latest_price)
-    except Exception:
-        pass
+# 실시간 시세 조회 (통합 API)
+def fetch_realtime_price(ticker_name, ticker_symbol, currency):
+    # 1. 한국 주식인 경우
+    if currency == "KRW" or ticker_name in KR_TICKER_MAP:
+        code = KR_TICKER_MAP.get(ticker_name, {}).get("code")
+        if not code and ticker_symbol:
+            code = str(ticker_symbol).replace(".KS", "").replace(".KQ", "").strip()
+        
+        # 1-1. yfinance 시도 (.KS)
+        if code:
+            yf_sym = f"{code}.KS"
+            try:
+                p = float(yf.Ticker(yf_sym).fast_info['lastPrice'])
+                if p > 0:
+                    return p
+            except Exception:
+                pass
+
+        # 1-2. 네이버 증권 JSON API 시도
+        if code:
+            try:
+                url = f"https://polling.finance.naver.com/api/realtime/market/stock/price?stocks={code}"
+                headers = {"User-Agent": "Mozilla/5.0"}
+                res = requests.get(url, headers=headers, timeout=3).json()
+                datas = res.get("result", {}).get("areas", [{}])[0].get("datas", [])
+                if datas:
+                    price = datas[0].get("closePrice") or datas[0].get("now")
+                    if price:
+                        return float(price)
+            except Exception:
+                pass
+
+    # 2. 미국 주식 및 일반 yfinance 조회
+    if ticker_symbol:
+        try:
+            p = float(yf.Ticker(ticker_symbol).fast_info['lastPrice'])
+            if p > 0:
+                return p
+        except Exception:
+            pass
+
     return None
 
 DEFAULT_PORTFOLIO_JG = [
@@ -67,7 +93,8 @@ DEFAULT_PORTFOLIO_JG = [
     {"ticker": "KODEX 200타겟위클리커버드콜", "ticker_symbol": "480460.KS", "qty": 299, "avg_price": 15436, "currency": "KRW", "last_div": 262, "total_received_div": 1517126},
     {"ticker": "KODEX 금융고배당TOP10타겟위클리커버트콜", "ticker_symbol": "489240.KS", "qty": 222, "avg_price": 12309, "currency": "KRW", "last_div": 162, "total_received_div": 164502},
     {"ticker": "RISE 미국테크100데일리고정커버드콜", "ticker_symbol": "486250.KS", "qty": 83, "avg_price": 12259, "currency": "KRW", "last_div": 271, "total_received_div": 0},
-    {"ticker": "TIGER 미국나스닥 100 타겟 데일리 커버드콜", "ticker_symbol": "482730.KS", "qty": 53, "avg_price": 10420, "currency": "KRW", "last_div": 127, "total_received_div": 27295}
+    {"ticker": "TIGER 미국나스닥 100 타겟 데일리 커버드콜", "ticker_symbol": "482730.KS", "qty": 53, "avg_price": 10420, "currency": "KRW", "last_div": 127, "total_received_div": 27295},
+    {"ticker": "KODEX 미국S&P500 데일리 커버드콜 OTM", "ticker_symbol": "482720.KS", "qty": 26, "avg_price": 9744, "currency": "KRW", "last_div": 119, "total_received_div": 0}
 ]
 
 DEFAULT_PORTFOLIO_GH = [
@@ -202,14 +229,13 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     for item in st.session_state[portfolio_key]:
         ticker_name = item.get("ticker", "")
         symbol = item.get("ticker_symbol", ticker_name)
-        
+        curr = item.get("currency", "USD")
+
         try: qty = float(item.get("qty", 0) or 0)
         except Exception: qty = 0.0
 
         try: avg_p = float(item.get("avg_price", 0) or 0)
         except Exception: avg_p = 0.0
-
-        curr = item.get("currency", "USD")
 
         try: last_div = float(item.get("last_div", 0) or 0)
         except Exception: last_div = 0.0
@@ -222,15 +248,12 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
         total_received_div_all_krw += tot_div
 
-        # 국내 주식 현재가 네이버 연동
-        current_p = fetch_kr_stock_price(ticker_name)
-        if current_p is None:
-            try:
-                current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
-            except Exception:
-                current_p = avg_p
+        # 실시간 현재가 불러오기 (이중 보완)
+        current_p = fetch_realtime_price(ticker_name, symbol, curr)
+        if current_p is None or current_p == 0:
+            current_p = avg_p  # 최후의 보루
 
-        # 통화별 평단가 표기 및 수익률 정밀 연산
+        # 통화별 데이터 가공
         if curr == "USD":
             avg_p_disp = f"${avg_p:,.2f}"
             buy_val_krw = qty * avg_p * usd_krw
@@ -246,7 +269,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
             invest_cost_disp, div_per_share_disp = f"₩{buy_val_krw:,.0f}", f"₩{last_div:,.0f}"
             monthly_div_item_krw = qty * last_div * (1 - TAX_RATE)
 
-        # 수익률 연산
+        # 수익률 계산
         return_rate = ((eval_val_krw - buy_val_krw) / buy_val_krw) * 100 if buy_val_krw > 0 else 0.0
         return_rate_disp = f"🔴 +{return_rate:.2f}%" if return_rate > 0 else (f"🔵 {return_rate:.2f}%" if return_rate < 0 else "⚪ 0.00%")
 
@@ -279,7 +302,6 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     if st.button(f"💾 현재 현황 구글 시트 저장 및 계산 반영 ({owner_name})", use_container_width=True, key=f"btn_save_curr_{portfolio_key}"):
         for idx, row in edited_df.iterrows():
             st.session_state[portfolio_key][idx]["qty"] = int(row["수량(주) ✏️"])
-            # 숫자 추출 파싱
             raw_avg = str(row["내 평단가 ✏️"]).replace("₩", "").replace("$", "").replace(",", "").strip()
             try:
                 st.session_state[portfolio_key][idx]["avg_price"] = float(raw_avg)
@@ -320,11 +342,10 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
     for item in st.session_state[target_key]:
         ticker_name = item.get("ticker", "")
         symbol = item.get("ticker_symbol", ticker_name)
-        
+        curr = item.get("currency", "USD")
+
         try: qty = float(item.get("qty", 0) or 0)
         except Exception: qty = 0.0
-
-        curr = item.get("currency", "USD")
 
         try: last_div = float(item.get("last_div", 0) or 0)
         except Exception: last_div = 0.0
@@ -332,12 +353,10 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
             last_div = KR_TICKER_MAP[ticker_name]["default_div"]
 
-        current_p = fetch_kr_stock_price(ticker_name)
-        if current_p is None:
-            try: current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
-            except Exception: 
-                try: current_p = float(item.get("avg_price", 0) or 0)
-                except Exception: current_p = 0.0
+        current_p = fetch_realtime_price(ticker_name, symbol, curr)
+        if current_p is None or current_p == 0:
+            try: current_p = float(item.get("avg_price", 0) or 0)
+            except Exception: current_p = 0.0
 
         if curr == "USD":
             buy_val_krw = qty * current_p * usd_krw
