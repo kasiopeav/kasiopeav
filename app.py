@@ -9,6 +9,9 @@ st.set_page_config(page_title="재국♡광희 주식 대시보드 (ver4)", layo
 
 TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
+# 분기 배당 종목 정의 (3개월마다 지급되는 종목)
+QUARTERLY_DIV_TICKERS = ["SCHD"]
+
 KR_TICKER_MAP = {
     "KODEX 미국배당커버드콜 액티브": {"code": "441680", "default_div": 99.0, "default_price": 13110.0},
     "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"code": "480410", "default_div": 149.0, "default_price": 12335.0},
@@ -234,7 +237,6 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
         total_received_div_all_krw += tot_div
 
-        # 저장된 현재가 또는 매핑된 기본값/조회값 사용
         current_p = item.get("current_price")
         if current_p is None or float(current_p or 0) == 0:
             if ticker_name in KR_TICKER_MAP:
@@ -246,6 +248,9 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
         else:
             current_p = float(current_p)
 
+        # 배당 주기 보완 (SCHD 등 분기 배당 종목은 3으로 나눔)
+        div_freq_factor = 3.0 if ticker_name in QUARTERLY_DIV_TICKERS else 1.0
+
         if curr == "USD":
             avg_p_disp = f"${avg_p:,.2f}"
             current_p_disp = f"${current_p:,.2f}"
@@ -253,13 +258,14 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
             eval_val_krw = qty * current_p * usd_krw
             invest_cost_disp = f"₩{buy_val_krw:,.0f} [${qty * avg_p:,.2f}]"
             div_per_share_disp = f"₩{last_div * usd_krw:,.0f} [${last_div:.4f}]"
-            monthly_div_item_krw = qty * last_div * usd_krw * (1 - TAX_RATE)
+            # 월 예상 배당금 = (1회 배당금 / 배당주기 factor) * 수량 * 환율 * (1-세율)
+            monthly_div_item_krw = qty * (last_div / div_freq_factor) * usd_krw * (1 - TAX_RATE)
         else:
             avg_p_disp = f"₩{avg_p:,.0f}"
             current_p_disp = f"₩{current_p:,.0f}"
             buy_val_krw, eval_val_krw = qty * avg_p, qty * current_p
             invest_cost_disp, div_per_share_disp = f"₩{buy_val_krw:,.0f}", f"₩{last_div:,.0f}"
-            monthly_div_item_krw = qty * last_div * (1 - TAX_RATE)
+            monthly_div_item_krw = qty * (last_div / div_freq_factor) * (1 - TAX_RATE)
 
         return_rate = ((eval_val_krw - buy_val_krw) / buy_val_krw) * 100 if buy_val_krw > 0 else 0.0
         return_rate_disp = f"🔴 +{return_rate:.2f}%" if return_rate > 0 else (f"🔵 {return_rate:.2f}%" if return_rate < 0 else "⚪ 0.00%")
@@ -326,14 +332,13 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     return total_buy_krw
 
 # ---------------------------------------------------------
-# 공통 미래 목표 랜더링 함수 (동일한 현재가 연동)
+# 공통 미래 목표 랜더링 함수
 # ---------------------------------------------------------
 def render_future_target_section(owner_name, target_key, current_total_buy, sheet_name, portfolio_key):
     st.subheader(f"🎯 미래 배당 세팅 목표 ({owner_name})")
     future_df_data = []
     future_total_buy_krw, future_yearly_pre_tax_div_krw, future_yearly_post_tax_div_krw = 0.0, 0.0, 0.0
 
-    # 보유 현황의 현재가를 빠른 매핑
     curr_price_map = {item["ticker"]: item.get("current_price") for item in st.session_state[portfolio_key]}
 
     for item in st.session_state[target_key]:
@@ -350,7 +355,6 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
             last_div = KR_TICKER_MAP[ticker_name]["default_div"]
 
-        # 보유 현황에 지정된 동일한 현재가 사용
         current_p = curr_price_map.get(ticker_name) or item.get("current_price")
         if current_p is None or float(current_p or 0) == 0:
             if ticker_name in KR_TICKER_MAP:
@@ -363,16 +367,21 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         else:
             current_p = float(current_p)
 
+        div_freq_factor = 3.0 if ticker_name in QUARTERLY_DIV_TICKERS else 1.0
+
         if curr == "USD":
             buy_val_krw = qty * current_p * usd_krw
-            pre_tax_div_annual_krw = qty * (last_div * 12) * usd_krw
+            # 연간 배당금: SCHD는 (분기 배당금 * 4), 월 배당은 (월 배당금 * 12)
+            annual_div_multiplier = 4.0 if ticker_name in QUARTERLY_DIV_TICKERS else 12.0
+            pre_tax_div_annual_krw = qty * (last_div * annual_div_multiplier) * usd_krw
             post_tax_div_annual_krw = pre_tax_div_annual_krw * (1 - TAX_RATE)
             target_price_disp = f"₩{current_p * usd_krw:,.0f} [${current_p:,.2f}]"
             invest_cost_disp = f"₩{buy_val_krw:,.0f} [${qty * current_p:,.2f}]"
             div_per_share_disp = f"₩{last_div * usd_krw:,.0f} [${last_div:.4f}]"
         else:
             buy_val_krw = qty * current_p
-            pre_tax_div_annual_krw = qty * (last_div * 12)
+            annual_div_multiplier = 4.0 if ticker_name in QUARTERLY_DIV_TICKERS else 12.0
+            pre_tax_div_annual_krw = qty * (last_div * annual_div_multiplier)
             post_tax_div_annual_krw = pre_tax_div_annual_krw * (1 - TAX_RATE)
             target_price_disp = f"₩{current_p:,.0f}"
             invest_cost_disp = f"₩{buy_val_krw:,.0f}"
