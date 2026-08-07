@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import requests
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -10,17 +11,17 @@ TAX_RATE = 0.154  # 배당소득세율 (15.4%)
 
 # 한국 종목명 -> 티커 심볼 & 기본 1주당 배당금 보완 매핑
 KR_TICKER_MAP = {
-    "KODEX 미국배당커버드콜 액티브": {"symbol": "441680.KS", "default_div": 99.0},
-    "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"symbol": "480410.KS", "default_div": 149.0},
-    "KODEX 200타겟위클리커버드콜": {"symbol": "480460.KS", "default_div": 252.0},
-    "KODEX 금융고배당TOP10타겟위클리커버트콜": {"symbol": "489240.KS", "default_div": 162.0},
-    "RISE 미국테크100데일리고정커버드콜": {"symbol": "486250.KS", "default_div": 271.0},
-    "TIGER 미국나스닥 100 타겟 데일리 커버드콜": {"symbol": "482730.KS", "default_div": 127.0},
-    "KODEX 미국S&P500 데일리 커버드콜 OTM": {"symbol": "482720.KS", "default_div": 119.0}
+    "KODEX 미국배당커버드콜 액티브": {"symbol": "441680.KS", "code": "441680", "default_div": 99.0},
+    "KODEX 미국 AI테크 TOP10 타겟커버드콜": {"symbol": "480410.KS", "code": "480410", "default_div": 149.0},
+    "KODEX 200타겟위클리커버드콜": {"symbol": "480460.KS", "code": "480460", "default_div": 252.0},
+    "KODEX 금융고배당TOP10타겟위클리커버트콜": {"symbol": "489240.KS", "code": "489240", "default_div": 162.0},
+    "RISE 미국테크100데일리고정커버드콜": {"symbol": "486250.KS", "code": "486250", "default_div": 271.0},
+    "TIGER 미국나스닥 100 타겟 데일리 커버드콜": {"symbol": "482730.KS", "code": "482730", "default_div": 127.0},
+    "KODEX 미국S&P500 데일리 커버드콜 OTM": {"symbol": "482720.KS", "code": "482720", "default_div": 119.0}
 }
 
 # ---------------------------------------------------------
-# 0. 구글 시트 연동 설정
+# 0. 구글 시트 연동 & 실시간 시세 처리
 # ---------------------------------------------------------
 @st.cache_resource
 def get_gspread_client():
@@ -39,7 +40,25 @@ def get_gspread_client():
 
 gc = get_gspread_client()
 
-# 기본 포트폴리오 (재국)
+# 네이버 증권에서 국내 ETF 실시간 시세 조회
+def fetch_kr_stock_price(code):
+    try:
+        url = f"https://polaroid.naver.com/api/v1/stock/{code}/realtime"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers, timeout=3).json()
+        price = res.get("closePrice") or res.get("now")
+        return float(price)
+    except Exception:
+        try:
+            url_fallback = f"https://finance.naver.com/item/sise_json.naver?code={code}&type=recent"
+            res_fb = requests.get(url_fallback, headers=headers, timeout=3).text
+            import json, re
+            clean_text = re.sub(r'[^\w\s:,\{\}\[\]"]', '', res_fb)
+            # 네이버 시세 백업 파싱
+            return float(json.loads(clean_text)["now"])
+        except Exception:
+            return None
+
 DEFAULT_PORTFOLIO_JG = [
     {"ticker": "JEPQ", "ticker_symbol": "JEPQ", "qty": 660, "avg_price": 53.71, "currency": "USD", "last_div": 0.56, "total_received_div": 3101187},
     {"ticker": "QQQI", "ticker_symbol": "QQQI", "qty": 627, "avg_price": 53.07, "currency": "USD", "last_div": 0.6346, "total_received_div": 680792},
@@ -53,7 +72,6 @@ DEFAULT_PORTFOLIO_JG = [
     {"ticker": "TIGER 미국나스닥 100 타겟 데일리 커버드콜", "ticker_symbol": "482730.KS", "qty": 53, "avg_price": 10420, "currency": "KRW", "last_div": 127, "total_received_div": 27295}
 ]
 
-# 기본 포트폴리오 (광희)
 DEFAULT_PORTFOLIO_GH = [
     {"ticker": "QQQI", "ticker_symbol": "QQQI", "qty": 240, "avg_price": 53.11, "currency": "USD", "last_div": 0.6346, "total_received_div": 339613}
 ]
@@ -114,7 +132,6 @@ st.markdown("""
     .status-badge-ok { display: inline-block; background-color: #c6f6d5; color: #22543d; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 12px; }
     .status-badge-warn { display: inline-block; background-color: #fed7d7; color: #9b2c2c; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 12px; }
     
-    /* 강조 미래 총 배당금 카드 박스 스타일 */
     .total-highlight-card {
         background: linear-gradient(135deg, #fff5f7 0%, #ffe6ec 100%);
         border: 2px solid #f6ad55;
@@ -208,22 +225,28 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
         total_received_div_all_krw += tot_div
 
-        try:
-            current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
-        except Exception:
-            current_p = avg_p
+        # 국내 ETF는 네이버 증권 시체 API로 연동 (시세 오류 해결)
+        current_p = None
+        if ticker_name in KR_TICKER_MAP:
+            kr_code = KR_TICKER_MAP[ticker_name]["code"]
+            current_p = fetch_kr_stock_price(kr_code)
+
+        if current_p is None:
+            try:
+                current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
+            except Exception:
+                current_p = avg_p
 
         if curr == "USD":
             buy_val_krw = qty * avg_p * usd_krw
             eval_val_krw = qty * current_p * usd_krw
-            avg_price_disp = f"₩{avg_p * usd_krw:,.0f} [${avg_p:,.2f}]"
             current_price_disp = f"₩{current_p * usd_krw:,.0f} [${current_p:,.2f}]"
             invest_cost_disp = f"₩{buy_val_krw:,.0f} [${qty * avg_p:,.2f}]"
             div_per_share_disp = f"₩{last_div * usd_krw:,.0f} [${last_div:.4f}]"
             monthly_div_item_krw = qty * last_div * usd_krw * (1 - TAX_RATE)
         else:
             buy_val_krw, eval_val_krw = qty * avg_p, qty * current_p
-            avg_price_disp, current_price_disp = f"₩{avg_p:,.0f}", f"₩{current_p:,.0f}"
+            current_price_disp = f"₩{current_p:,.0f}"
             invest_cost_disp, div_per_share_disp = f"₩{buy_val_krw:,.0f}", f"₩{last_div:,.0f}"
             monthly_div_item_krw = qty * last_div * (1 - TAX_RATE)
 
@@ -238,7 +261,6 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
             "티커": ticker_name,
             "수량(주) ✏️": qty,
             "내 평단가 ✏️": avg_p,
-            "내 평단가 (한화/달러)": avg_price_disp,
             "현재가 (한화/달러)": current_price_disp,
             "총 투자비용 (수량×평단가)": invest_cost_disp,
             "1주당 배당금 (한화/달러)": div_per_share_disp,
@@ -250,7 +272,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
 
     edited_df = st.data_editor(
         df_display,
-        disabled=["티커", "내 평단가 (한화/달러)", "현재가 (한화/달러)", "총 투자비용 (수량×평단가)", "1주당 배당금 (한화/달러)", "월 예상 배당금 (세후)", "현재 수익률"],
+        disabled=["티커", "현재가 (한화/달러)", "총 투자비용 (수량×평단가)", "1주당 배당금 (한화/달러)", "월 예상 배당금 (세후)", "현재 수익률"],
         column_config={
             "수량(주) ✏️": st.column_config.NumberColumn(min_value=0, step=1, format="%d"),
             "내 평단가 ✏️": st.column_config.NumberColumn(format="$%.2f")
@@ -310,10 +332,16 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         if last_div == 0.0 and ticker_name in KR_TICKER_MAP:
             last_div = KR_TICKER_MAP[ticker_name]["default_div"]
 
-        try: current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
-        except Exception: 
-            try: current_p = float(item.get("avg_price", 0) or 0)
-            except Exception: current_p = 0.0
+        current_p = None
+        if ticker_name in KR_TICKER_MAP:
+            kr_code = KR_TICKER_MAP[ticker_name]["code"]
+            current_p = fetch_kr_stock_price(kr_code)
+
+        if current_p is None:
+            try: current_p = float(yf.Ticker(symbol).fast_info['lastPrice'])
+            except Exception: 
+                try: current_p = float(item.get("avg_price", 0) or 0)
+                except Exception: current_p = 0.0
 
         if curr == "USD":
             buy_val_krw = qty * current_p * usd_krw
