@@ -5,7 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
-# PAGE CONFIG (ver1 기준 유지)
+# PAGE CONFIG
 st.set_page_config(
     page_title="재국♡광희 인생 계획",
     page_icon="💖",
@@ -27,7 +27,7 @@ def init_gspread():
     spreadsheet = client.open_by_key(st.secrets["spreadsheet"]["sheet_id"])
     return spreadsheet
 
-# 백업용 원본 데이터
+# 원본 내 평단가 데이터 완벽 복원
 DEFAULT_JAEGUK_HOLDINGS = pd.DataFrame([
     {"티커": "JEPQ", "수량(주)": 660, "내 평단가": 53.71, "예상 1주당 배당금": 0.5600},
     {"티커": "QQQI", "수량(주)": 627, "내 평단가": 53.07, "예상 1주당 배당금": 0.6346},
@@ -59,10 +59,23 @@ def load_data(sheet, default_df):
         rows = sheet.get_all_values()
         if not rows or len(rows) < 2:
             return default_df.copy()
+        
         headers = [str(h).strip() for h in rows[0]]
         df = pd.DataFrame(rows[1:], columns=headers)
-        if not any("티커" in c for c in df.columns):
+        
+        # 티커 열 정제
+        ticker_col = next((c for c in df.columns if "티커" in c), None)
+        if not ticker_col:
             return default_df.copy()
+            
+        # 열 이름 표준화
+        df.rename(columns={
+            ticker_col: "티커",
+            next((c for c in df.columns if "수량" in c), "수량(주)"): "수량(주)",
+            next((c for c in df.columns if "평단가" in c), "내 평단가"): "내 평단가",
+            next((c for c in df.columns if "배당금" in c and "1주당" in c), "예상 1주당 배당금"): "예상 1주당 배당금"
+        }, inplace=True)
+        
         return df
     except:
         return default_df.copy()
@@ -145,7 +158,7 @@ with col4:
 st.divider()
 
 # ---------------------------------------------------------
-# 3. 실시간 통합 보유 현황 및 계좌 요약 (현재 실제 보유용)
+# 3. 실시간 통합 보유 현황 및 계좌 요약 (평단가 보안 처리)
 # ---------------------------------------------------------
 def render_holdings_and_summary(owner_name, sheet, default_df):
     st.subheader(f"📊 실시간 통합 보유 현황 ({owner_name})")
@@ -156,12 +169,33 @@ def render_holdings_and_summary(owner_name, sheet, default_df):
     display_rows = []
     for idx, row in raw_df.iterrows():
         ticker = str(row.get("티커", "")).strip()
+        
+        # 데이터 정제 및 기본값 매칭
         try:
             qty = float(str(row.get("수량(주)", row.get("수량", 0))).replace(",", ""))
+        except:
+            qty = 0.0
+
+        try:
             avg_p = float(str(row.get("내 평단가", 0)).replace(",", "").replace("$", "").replace("₩", ""))
+        except:
+            avg_p = 0.0
+
+        # 평단가가 0인 경우 디폴트 맵에서 가져오기
+        if avg_p == 0:
+            match = default_df[default_df["티커"] == ticker]
+            if not match.empty:
+                avg_p = float(match["내 평단가"].values[0])
+
+        try:
             div_p = float(str(row.get("예상 1주당 배당금", 0)).replace(",", "").replace("$", "").replace("₩", ""))
         except:
-            qty, avg_p, div_p = 0.0, 0.0, 0.0
+            div_p = 0.0
+            
+        if div_p == 0:
+            match = default_df[default_df["티커"] == ticker]
+            if not match.empty:
+                div_p = float(match["예상 1주당 배당금"].values[0])
 
         if ticker:
             is_kr = "KODEX" in ticker or "TIGER" in ticker or "RISE" in ticker or ticker.endswith(".KS") or ticker.endswith(".KQ")
@@ -206,6 +240,7 @@ def render_holdings_and_summary(owner_name, sheet, default_df):
         st.success(f"{owner_name} 님의 현황이 구글 시트에 안전하게 보관되었습니다!")
         st.rerun()
 
+    # 실시간 연산
     tot_invested = 0.0
     tot_annual_div_pre = 0.0
 
@@ -256,12 +291,11 @@ invest_g, div_pre_g, div_post_g = render_holdings_and_summary("광희", sheet_gw
 st.divider()
 
 # ---------------------------------------------------------
-# 4. 미래 배당 세팅 목표 (완전 독립형 데이터 처리)
+# 4. 미래 배당 세팅 목표 (독립형 세션 처리)
 # ---------------------------------------------------------
 def render_future_target_table(owner_name, default_df):
     st.subheader(f"🎯 미래 배당 세팅 목표 ({owner_name})")
     
-    # Session State를 사용하여 현재 보유 현황 시트와 완벽히 격리
     state_key = f"target_df_state_{owner_name}"
     if state_key not in st.session_state:
         target_init_rows = []
@@ -277,7 +311,6 @@ def render_future_target_table(owner_name, default_df):
                 })
         st.session_state[state_key] = pd.DataFrame(target_init_rows)
 
-    # 세션 상태에서 데이터 불러와서 화면에 출력
     curr_target_df = st.session_state[state_key]
     
     display_target_rows = []
@@ -325,12 +358,10 @@ def render_future_target_table(owner_name, default_df):
     )
 
     if st.button(f"💾 미래 목표 저장 및 즉시 연산 ({owner_name})", key=f"btn_save_target_{owner_name}"):
-        # 변경된 수정값을 독립적인 세션 상태에 저장 (상단 보유 현황에 영향 안 미침)
         st.session_state[state_key] = edited_target_df[["티커", "목표 수량(주) ✏️", "예상 1주당 배당금 ✏️"]]
         st.success(f"{owner_name} 님의 미래 배당 목표 설정이 성공적으로 반영되었습니다!")
         st.rerun()
 
-    # 독립된 목표 시드 합산
     tot_target_seed = 0.0
     tot_target_div_post = 0.0
 
