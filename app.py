@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 import datetime
 
 # -----------------------------------------------------------------------------
@@ -33,8 +33,11 @@ def get_gspread_client():
     if "private_key" in creds_dict:
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
     
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
 
 @st.cache_data(ttl=300)
@@ -53,6 +56,7 @@ def save_sheet_data(worksheet, df):
     try:
         worksheet.clear()
         worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+        st.cache_data.clear()
         return True
     except Exception as e:
         st.error(f"구글 시트 저장 실패: {e}")
