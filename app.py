@@ -248,7 +248,6 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
         else:
             current_p = float(current_p)
 
-        # 배당 주기 보완 (SCHD 등 분기 배당 종목은 3으로 나눔)
         div_freq_factor = 3.0 if ticker_name in QUARTERLY_DIV_TICKERS else 1.0
 
         if curr == "USD":
@@ -258,7 +257,6 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
             eval_val_krw = qty * current_p * usd_krw
             invest_cost_disp = f"₩{buy_val_krw:,.0f} [${qty * avg_p:,.2f}]"
             div_per_share_disp = f"₩{last_div * usd_krw:,.0f} [${last_div:.4f}]"
-            # 월 예상 배당금 = (1회 배당금 / 배당주기 factor) * 수량 * 환율 * (1-세율)
             monthly_div_item_krw = qty * (last_div / div_freq_factor) * usd_krw * (1 - TAX_RATE)
         else:
             avg_p_disp = f"₩{avg_p:,.0f}"
@@ -332,7 +330,7 @@ def render_portfolio_section(owner_name, portfolio_key, sheet_name):
     return total_buy_krw
 
 # ---------------------------------------------------------
-# 공통 미래 목표 랜더링 함수
+# 공통 미래 목표 랜더링 함수 (통합 배당금 열 & 월 배당금 연산)
 # ---------------------------------------------------------
 def render_future_target_section(owner_name, target_key, current_total_buy, sheet_name, portfolio_key):
     st.subheader(f"🎯 미래 배당 세팅 목표 ({owner_name})")
@@ -371,13 +369,13 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
 
         if curr == "USD":
             buy_val_krw = qty * current_p * usd_krw
-            # 연간 배당금: SCHD는 (분기 배당금 * 4), 월 배당은 (월 배당금 * 12)
             annual_div_multiplier = 4.0 if ticker_name in QUARTERLY_DIV_TICKERS else 12.0
             pre_tax_div_annual_krw = qty * (last_div * annual_div_multiplier) * usd_krw
             post_tax_div_annual_krw = pre_tax_div_annual_krw * (1 - TAX_RATE)
             target_price_disp = f"₩{current_p * usd_krw:,.0f} [${current_p:,.2f}]"
             invest_cost_disp = f"₩{buy_val_krw:,.0f} [${qty * current_p:,.2f}]"
-            div_per_share_disp = f"₩{last_div * usd_krw:,.0f} [${last_div:.4f}]"
+            div_per_share_disp = f"${last_div:.4f}"
+            monthly_div_item_krw = qty * (last_div / div_freq_factor) * usd_krw * (1 - TAX_RATE)
         else:
             buy_val_krw = qty * current_p
             annual_div_multiplier = 4.0 if ticker_name in QUARTERLY_DIV_TICKERS else 12.0
@@ -386,6 +384,7 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
             target_price_disp = f"₩{current_p:,.0f}"
             invest_cost_disp = f"₩{buy_val_krw:,.0f}"
             div_per_share_disp = f"₩{last_div:,.0f}"
+            monthly_div_item_krw = qty * (last_div / div_freq_factor) * (1 - TAX_RATE)
 
         future_total_buy_krw += buy_val_krw
         future_yearly_pre_tax_div_krw += pre_tax_div_annual_krw
@@ -394,24 +393,30 @@ def render_future_target_section(owner_name, target_key, current_total_buy, shee
         future_df_data.append({
             "티커": ticker_name,
             "목표 수량(주) ✏️": qty,
-            "예상 1주당 배당금 ✏️": last_div,
             "현재가 기준 평단가": target_price_disp,
             "목표 총 필요 시드": invest_cost_disp,
-            "예상 1주당 배당금 (한화/달러)": div_per_share_disp,
-            "목표 연 예상 배당금 (세후)": f"₩{post_tax_div_annual_krw:,.0f}"
+            "예상 1주당 배당금 ✏️": div_per_share_disp,
+            "목표 연 예상 배당금 (세후)": f"₩{post_tax_div_annual_krw:,.0f}",
+            "월 예상 배당금 (세후)": f"₩{monthly_div_item_krw:,.0f}"
         })
 
     edited_future_df = st.data_editor(
         pd.DataFrame(future_df_data),
-        disabled=["티커", "현재가 기준 평단가", "목표 총 필요 시드", "예상 1주당 배당금 (한화/달러)", "목표 연 예상 배당금 (세후)"],
-        column_config={"목표 수량(주) ✏️": st.column_config.NumberColumn(min_value=0, step=1, format="%d"), "예상 1주당 배당금 ✏️": st.column_config.NumberColumn(format="$%.4f")},
+        disabled=["티커", "현재가 기준 평단가", "목표 총 필요 시드", "목표 연 예상 배당금 (세후)", "월 예상 배당금 (세후)"],
+        column_config={
+            "목표 수량(주) ✏️": st.column_config.NumberColumn(min_value=0, step=1, format="%d")
+        },
         use_container_width=True, hide_index=True, key=f"editor_future_{target_key}"
     )
 
     if st.button(f"💾 미래 목표 구글 시트 저장 및 즉시 연산 ({owner_name})", use_container_width=True, key=f"btn_save_fut_{target_key}"):
         for idx, row in edited_future_df.iterrows():
             st.session_state[target_key][idx]["qty"] = int(row["목표 수량(주) ✏️"])
-            st.session_state[target_key][idx]["last_div"] = float(row["예상 1주당 배당금 ✏️"])
+            raw_div = str(row["예상 1주당 배당금 ✏️"]).replace("₩", "").replace("$", "").replace(",", "").strip()
+            try:
+                st.session_state[target_key][idx]["last_div"] = float(raw_div)
+            except Exception:
+                pass
         
         save_sheet_data(sheet_name, st.session_state[target_key])
         st.success(f"[{owner_name}] 미래 목표가 저장되었습니다!")
