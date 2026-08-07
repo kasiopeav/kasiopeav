@@ -25,7 +25,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. 구글 시트 연동 및 데이터 처리
+# 2. 구글 시트 연동 및 데이터 처리 (첫 번째 시트 자동 연결)
 # -----------------------------------------------------------------------------
 @st.cache_resource
 def get_gspread_client():
@@ -41,16 +41,16 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 @st.cache_data(ttl=60)
-def load_raw_sheet_data(sheet_name):
+def load_raw_sheet_data():
     try:
         gc = get_gspread_client()
         sh = gc.open_by_key(st.secrets["spreadsheet"]["sheet_id"])
-        worksheet = sh.worksheet(sheet_name)
-        # 모든 셀 데이터를 원본 형태로 가져옴
+        # 탭 이름 에러 방지를 위해 첫 번째 시트(sheet1)를 직접 지정하여 불러옴
+        worksheet = sh.get_worksheet(0)
         raw_values = worksheet.get_all_values()
         return raw_values, worksheet
     except Exception as e:
-        st.error(f"'{sheet_name}' 시트를 불러오는 중 오류 발생: {e}")
+        st.error(f"구글 시트를 불러오는 중 오류 발생: {e}")
         return [], None
 
 def save_raw_sheet_data(worksheet, values):
@@ -68,12 +68,12 @@ def fetch_market_data():
     tickers = ["CL=F", "^TNX", "KRW=X", "^VIX"]
     try:
         data = yf.download(tickers, period="5d", interval="1d", progress=False)['Close']
-        latest_oil = data['CL=F'].dropna().iloc[-1] if 'CL=F' in data else 78.02
+        latest_oil = data['CL=F'].dropna().iloc[-1] if 'CL=F' in data else 78.04
         latest_tnx = data['^TNX'].dropna().iloc[-1] if '^TNX' in data else 4.67
-        latest_usdkrw = data['KRW=X'].dropna().iloc[-1] if 'KRW=X' in data else 1418.18
+        latest_usdkrw = data['KRW=X'].dropna().iloc[-1] if 'KRW=X' in data else 1418.38
         latest_vix = data['^VIX'].dropna().iloc[-1] if '^VIX' in data else 15.15
     except Exception:
-        latest_oil, latest_tnx, latest_usdkrw, latest_vix = 78.02, 4.67, 1418.18, 15.15
+        latest_oil, latest_tnx, latest_usdkrw, latest_vix = 78.04, 4.67, 1418.38, 15.15
     return float(latest_oil), float(latest_tnx), float(latest_usdkrw), float(latest_vix)
 
 # 시장 지수 로드
@@ -105,20 +105,17 @@ st.divider()
 st.subheader("📊 실시간 통합 자산 현황 & 미래 플랜")
 st.caption("💡 아래 구글 시트 테이블 데이터를 직접 수정하신 후 저장 버튼을 누르시면 실시간 연동됩니다.")
 
-raw_data, ws_main = load_raw_sheet_data("현재&최종플랜")
+raw_data, ws_main = load_raw_sheet_data()
 
 if raw_data:
-    # A17행(17번째 줄, 파이썬 인덱스로 16)부터 데이터 읽기
-    # 데이터가 17줄보다 적은 경우 전체 데이터 표시
+    # A17행(17번째 줄, 파이썬 인덱스 16)부터 데이터 추출
     start_row = 16 if len(raw_data) >= 17 else 0
     sub_data = raw_data[start_row:]
     
     if len(sub_data) > 1:
-        # 첫 번째 줄을 헤더(열 이름)로 지정
         headers = sub_data[0]
         rows = sub_data[1:]
         
-        # 열 이름 중복 및 빈값 처리
         cleaned_headers = []
         for i, h in enumerate(headers):
             h_str = str(h).strip()
@@ -128,11 +125,9 @@ if raw_data:
 
         df = pd.DataFrame(rows, columns=cleaned_headers)
         
-        # 테이블 에디터
         edited_df = st.data_editor(df, key="sheet_editor", num_rows="dynamic", use_container_width=True)
         
         if st.button("💾 데이터 저장 및 실시간 계산 반영", key="btn_save_sheet"):
-            # 기존 상단 데이터를 유지하고 17행 이하 수정본을 합성하여 저장
             updated_sub = [edited_df.columns.tolist()] + edited_df.values.tolist()
             full_updated = raw_data[:start_row] + updated_sub
             
@@ -140,7 +135,6 @@ if raw_data:
                 st.success("구글 시트에 성공적으로 업데이트되었습니다!")
                 st.rerun()
     else:
-        # 전체 데이터 그대로 표출
         df_full = pd.DataFrame(raw_data)
         edited_df = st.data_editor(df_full, key="full_editor", num_rows="dynamic", use_container_width=True)
         if st.button("💾 전체 데이터 저장 및 반영", key="btn_save_full"):
