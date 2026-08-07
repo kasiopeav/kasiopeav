@@ -91,7 +91,6 @@ DEFAULT_PORTFOLIO_GH = [
     {"ticker": "QQQI", "ticker_symbol": "QQQI", "qty": 240, "avg_price": 53.11, "current_price": 54.75, "currency": "USD", "last_div": 0.6346}
 ]
 
-# 2026년 1월 기점 초기화 장부 데이터
 DEFAULT_DIV_HISTORY_JG = []
 DEFAULT_DIV_HISTORY_GH = []
 
@@ -488,7 +487,7 @@ with main_tab1:
 
 
 # ---------------------------------------------------------
-# TAB 2: 월별 배당금 입금 장부 (직관성 강화 & 2026 초기화)
+# TAB 2: 월별 배당금 입금 장부
 # ---------------------------------------------------------
 with main_tab2:
     st.subheader("📅 월별 배당금 입금 장부 (2026년~)")
@@ -524,19 +523,9 @@ with main_tab2:
     st.markdown("---")
     st.markdown(f"#### 📜 [{owner_choice}] 2026년 이후 배당 입금 상세 내역 장부")
 
-    # 초기화 버튼
-    init_col1, init_col2 = st.columns([7, 3])
-    with init_col2:
-        if st.button(f"🚨 [{owner_choice}] 장부 전체 내역 초기화 (2026~)", use_container_width=True):
-            st.session_state[history_key] = []
-            save_sheet_data(sheet_name, [])
-            st.warning(f"[{owner_choice}] 장부 데이터가 초기화되었습니다.")
-            st.rerun()
-
     if st.session_state[history_key]:
         df_hist = pd.DataFrame(st.session_state[history_key])
         
-        # 직관적 데이터 에디터 (포맷팅 및 시각적 바 적용)
         edited_hist = st.data_editor(
             df_hist,
             column_config={
